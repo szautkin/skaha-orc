@@ -1,0 +1,63 @@
+# Mock AC service configuration
+
+replicaCount: 1
+
+image:
+  repository: mock-ac
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# AC service configuration
+config:
+  resourceID: "ivo://cadc.nrc.ca/gms"
+  baseURL: "http://mock-ac.skaha-system.svc.cluster.local/ac"
+
+# Mock users (can be extended via configmap)
+users:
+  doiadmin:
+    identityType: X509
+    firstName: DOI
+    lastName: Administrator
+    email: doiadmin@cadc.nrc.ca
+    uid: 10001
+    gid: 10001
+  testuser:
+    identityType: HTTP
+    firstName: Test
+    lastName: User
+    email: testuser@cadc.nrc.ca
+    uid: 10002
+    gid: 10002
+
+# Mock groups
+groups:
+  - name: RAFTS-test-reviewers
+    owner: doiadmin
+    description: RAFTS Test Reviewers Group
+    members:
+      - doiadmin
+      - testuser
+  - name: platform-users
+    owner: doiadmin
+    description: Science Platform Users
+    members:
+      - doiadmin
+      - testuser
+
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "50m"
+  limits:
+    memory: "128Mi"
+    cpu: "200m"
+
+# For routing via ingress
+ingress:
+  enabled: true
+  path: /ac

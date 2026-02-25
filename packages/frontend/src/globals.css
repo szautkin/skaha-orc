@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-congress-blue: #005493;
+  --color-prussian-blue: #002754;
+  --color-buttercup-yellow: #f5aa1c;
+  --color-tall-poppy-red: #c63527;
+  --color-success-green: #16a34a;
+  --color-light-blue: #e8f4fd;
+  --color-neutral-gray: #64748b;
+}

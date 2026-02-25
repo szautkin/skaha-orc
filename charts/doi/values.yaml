@@ -1,0 +1,77 @@
+kubernetesClusterDomain: cluster.local
+
+# Tell Kubernetes to spin up multiple instances. Defaults to 1.
+replicaCount: 1
+
+# Namespace configuration
+skaha:
+  namespace: skaha-system
+
+# DOI web service deployment
+deployment:
+  hostname: haproxy.cadc.dao.nrc.ca
+  doi:
+    image: doi:latest
+    imagePullPolicy: IfNotPresent
+
+    # Resource identifiers
+    resourceID: ivo://cadc.nrc.ca/doi
+
+    # DOI service configuration
+    vospaceParentUri: "vos://cadc.nrc.ca~cavern/home/jburke/rafts"
+    metaDataPrefix: "doi-"
+    groupPrefix: "TEST.RAFTS-"
+    landingUrl: "https://www.canfar.net/citation/landing"
+    doiIdentifierPrefix: "RAFTS-"
+    publisherGroupURI: "ivo://cadc.nrc.ca/gms?RAFTS-test-reviewers"
+    randomTestID: "true"
+
+    # DataCite configuration
+    datacite:
+      mdsUrl: "https://mds.test.datacite.org"
+      accountPrefix: "10.80791"
+      username: "NRC.CADC"
+      password: "q3t-zLAFY8Em"
+
+    # Registry configuration
+    registryURL: https://haproxy.cadc.dao.nrc.ca/reg
+
+    # GMS configuration
+    gmsID: "ivo://cadc.nrc.ca/gms"
+
+    # Identity Manager class
+    # Use ca.nrc.cadc.ac.ACIdentityManager for production (validates signatures)
+    # Use ca.nrc.cadc.auth.NoOpIdentityManager for local dev (accepts any token - but doesn't handle cookies)
+    identityManagerClass: ca.nrc.cadc.ac.ACIdentityManager
+
+    # Resources provided to the DOI service
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+    # Optionally mount a custom CA certificate
+    # extraVolumeMounts:
+    # - mountPath: "/config/cacerts"
+    #   name: cacert-volume
+
+    # Create the CA certificate volume to be mounted in extraVolumeMounts
+    # extraVolumes:
+    # - name: cacert-volume
+    #   secret:
+    #     defaultMode: 420
+    #     secretName: doi-cacert-secret
+
+  # Specify extra hostnames that will be added to the Pod's /etc/hosts file
+  # extraHosts:
+  #   - ip: 132.246.199.38
+  #     hostname: haproxy.cadc.dao.nrc.ca
+
+secrets:
+  # Certificates for DOI service
+  # doi-certs:
+  #   doiadmin.pem: <base64 encoded pem>
+  #   cadcproxy.pem: <base64 encoded pem>

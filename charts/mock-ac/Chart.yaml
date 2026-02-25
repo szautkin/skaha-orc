@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mock-ac
+description: Mock OpenCADC Access Control service for local development
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

@@ -1,0 +1,27 @@
+{
+  "name": "@skaha-orc/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@skaha-orc/shared": "*",
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "execa": "^9.5.0",
+    "js-yaml": "^4.1.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/js-yaml": "^4.0.9",
+    "tsx": "^4.19.0"
+  }
+}

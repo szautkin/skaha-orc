@@ -1,0 +1,11 @@
+apiVersion: v2
+name: doi
+description: "A Helm chart to install the DOI (Digital Object Identifier) service"
+
+type: application
+
+# Chart version
+version: 0.1.0
+
+# Application version
+appVersion: "1.2.0"

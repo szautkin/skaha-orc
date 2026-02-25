@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doi-config
+  namespace: {{ .Values.skaha.namespace }}
+data:
+  doi.properties: |
+    # VOSpace URI to the DOI parent node
+    ca.nrc.cadc.doi.vospaceParentUri = {{ .Values.deployment.doi.vospaceParentUri }}
+
+    # Prefix to the DOI metadata file
+    ca.nrc.cadc.doi.metaDataPrefix = {{ .Values.deployment.doi.metaDataPrefix }}
+
+    # Prefix to the DOI GMS Group name
+    ca.nrc.cadc.doi.groupPrefix = {{ .Values.deployment.doi.groupPrefix }}
+
+    # DOI landing page url
+    ca.nrc.cadc.doi.landingUrl = {{ .Values.deployment.doi.landingUrl }}
+
+    # DataCite MDS REST endpoint
+    ca.nrc.cadc.doi.datacite.mdsUrl = {{ .Values.deployment.doi.datacite.mdsUrl }}
+
+    # DataCite account prefix
+    ca.nrc.cadc.doi.datacite.accountPrefix = {{ .Values.deployment.doi.datacite.accountPrefix }}
+
+    # DataCite account username
+    ca.nrc.cadc.doi.datacite.username = {{ .Values.deployment.doi.datacite.username }}
+
+    # DataCite account password
+    ca.nrc.cadc.doi.datacite.password = {{ .Values.deployment.doi.datacite.password }}
+
+    # DOI Identifier Prefix
+    ca.nrc.cadc.doi.doiIdentifierPrefix = {{ .Values.deployment.doi.doiIdentifierPrefix }}
+
+    # Publisher Group URI (optional)
+    {{- if .Values.deployment.doi.publisherGroupURI }}
+    ca.nrc.cadc.doi.publisherGroupURI = {{ .Values.deployment.doi.publisherGroupURI }}
+    {{- end }}
+
+    # Random test ID (optional)
+    {{- if .Values.deployment.doi.randomTestID }}
+    ca.nrc.cadc.doi.randomTestID = {{ .Values.deployment.doi.randomTestID }}
+    {{- end }}
+
+  catalina.properties: |
+    # tomcat-base
+    tomcat.connector.secure=true
+    tomcat.connector.scheme=https
+    tomcat.connector.proxyName={{ .Values.deployment.hostname }}
+    tomcat.connector.proxyPort=443
+
+    # enable support for haproxy SSL termination + pass client cert
+    ca.nrc.cadc.auth.PrincipalExtractor.enableClientCertHeader=true
+
+    ca.nrc.cadc.auth.IdentityManager={{ .Values.deployment.doi.identityManagerClass }}
+
+  cadc-registry.properties: |
+    # clients of the registry need to know where to find it
+    ca.nrc.cadc.reg.client.RegistryClient.baseURL={{ .Values.deployment.doi.registryURL }}
+
+    # The following authority lines are only required for services
+    ivo://ivoa.net/std/GMS#search-1.0 = {{ .Values.deployment.doi.gmsID }}
+    ivo://ivoa.net/std/GMS#search-0.1 = {{ .Values.deployment.doi.gmsID }}
+    ivo://ivoa.net/std/UMS#users-1.0  = {{ .Values.deployment.doi.gmsID }}
+    ivo://ivoa.net/std/UMS#users-0.1  = {{ .Values.deployment.doi.gmsID }}
+    ivo://ivoa.net/std/UMS#login-1.0  = {{ .Values.deployment.doi.gmsID }}
+
+    ivo://ivoa.net/std/CDP#delegate-1.0 = ivo://cadc.nrc.ca/cred
+    ivo://ivoa.net/std/CDP#proxy-1.0    = ivo://cadc.nrc.ca/cred
+
+    ivo://ivoa.net/sso#OAuth             = {{ .Values.deployment.doi.gmsID }}
+    ivo://ivoa.net/sso#OpenID            = {{ .Values.deployment.doi.gmsID }}
+    ivo://ivoa.net/sso#tls-with-password = {{ .Values.deployment.doi.gmsID }}
+
+    http://www.opencadc.org/std/UMS#users-1.0 = {{ .Values.deployment.doi.gmsID }}
+    http://www.opencadc.org/std/UMS#reqs-1.0 = {{ .Values.deployment.doi.gmsID }}
+    http://www.opencadc.org/std/UMS#login-1.0 = {{ .Values.deployment.doi.gmsID }}
+    http://www.opencadc.org/std/UMS#resetpass-1.0 = {{ .Values.deployment.doi.gmsID }}
+    http://www.opencadc.org/std/UMS#whoami-1.0 = {{ .Values.deployment.doi.gmsID }}
+
+    ivo://ivoa.net/std/GMS#groups-0.1 = {{ .Values.deployment.doi.gmsID }}
+    ivo://ivoa.net/std/GMS#groups-1.0 = {{ .Values.deployment.doi.gmsID }}
+
+  cadc-log.properties: |
+    # Logging configuration
+    log4j.rootLogger=INFO
+
+  ac-domains.properties: |
+    domains = www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca cadc-ccda.hia-iha.nrc-cnrc.gc.ca www.canfar.net canfar.net cadc.dao.nrc.ca {{ .Values.deployment.hostname }}
+
+  RsaSignaturePub.key: |
+    -----BEGIN PUBLIC KEY-----
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArV0WPhjupiR1Ec+TXc3y
+    MglErhvDb4Ih4TwHVGyMuMEeb3LskQTMSJD/+ZZMvYypwCGIoAt50rfd+NQB9i66
+    vKQPZ7M7wrGKe3XNusL0/y5TxMCeGU/DnKdoQLmQvOSqpr7vwdCjYy7EQoAD6L4N
+    nO956W/tBlwtWQCKFnSMVJc/iVm7ct2I3ZwQyQKksIHpR3N5mINSh9hQJA+qLSLw
+    8Klg3dk8zCrQdm2NkTv1ZjbFKMv5yR1SXrYq1DOROKRYpFr7w1vIMheSDBZtGpqi
+    8P8t5VgIuRG337F37RyvAIW6nZeMuO5py9ZBpf2UIB/VcNFj0Qgwizxrk/pAbxpf
+    nQIDAQAB
+    -----END PUBLIC KEY-----
+
+  war-rename.conf: |
+    # no rename needed

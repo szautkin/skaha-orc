@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    run: doi-tomcat
+  name: doi-tomcat
+  namespace: {{ .Values.skaha.namespace }}
+spec:
+  replicas: {{ default 1 .Values.replicaCount }}
+  selector:
+    matchLabels:
+      run: doi-tomcat
+  template:
+    metadata:
+      labels:
+        run: doi-tomcat
+    spec:
+{{- with .Values.deployment.doi.nodeAffinity }}
+      affinity:
+        nodeAffinity:
+{{ . | toYaml | indent 10 }}
+{{- end }}
+      imagePullSecrets:
+        - name: regcred
+      containers:
+      - image: {{ .Values.deployment.doi.image }}
+        imagePullPolicy: {{ .Values.deployment.doi.imagePullPolicy }}
+        name: doi-tomcat
+        resources:
+          requests:
+            memory: {{ .Values.deployment.doi.resources.requests.memory }}
+            cpu: {{ .Values.deployment.doi.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.deployment.doi.resources.limits.memory }}
+            cpu: {{ .Values.deployment.doi.resources.limits.cpu }}
+        {{- with .Values.deployment.doi.extraEnv }}
+        env:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        {{- with .Values.deployment.doi.extraPorts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            path: /doi/availability
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /doi/availability
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - mountPath: "/config/doi.properties"
+          name: config-volume
+          subPath: doi.properties
+        - mountPath: "/config/catalina.properties"
+          name: config-volume
+          subPath: catalina.properties
+        - mountPath: "/config/cadc-registry.properties"
+          name: config-volume
+          subPath: cadc-registry.properties
+        - mountPath: "/config/cadc-log.properties"
+          name: config-volume
+          subPath: cadc-log.properties
+        - mountPath: "/config/ac-domains.properties"
+          name: config-volume
+          subPath: ac-domains.properties
+        - mountPath: "/config/RsaSignaturePub.key"
+          name: config-volume
+          subPath: RsaSignaturePub.key
+        - mountPath: "/root/.ssl/RsaSignaturePub.key"
+          name: config-volume
+          subPath: RsaSignaturePub.key
+        - mountPath: "/config/doiadmin.pem"
+          name: certs-volume
+          subPath: doiadmin.pem
+        - mountPath: "/config/cadcproxy.pem"
+          name: certs-volume
+          subPath: cadcproxy.pem
+        {{- with .Values.deployment.doi.extraVolumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- with .Values.deployment.extraHosts }}
+      hostAliases:
+{{- range $extraHost := . }}
+        - ip: {{ $extraHost.ip }}
+          hostnames:
+            - {{ $extraHost.hostname }}
+{{- end }}
+{{- end }}
+      volumes:
+      - name: config-volume
+        configMap:
+          name: doi-config
+      - name: certs-volume
+        secret:
+          secretName: doi-certs
+          defaultMode: 420
+      {{- with .Values.deployment.doi.extraVolumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
