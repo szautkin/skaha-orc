@@ -43,6 +43,18 @@ export type {
 } from './types/certs.js';
 
 export type {
+  HAProxyDeployMode,
+  HAProxyStatus,
+  HAProxyConfigResponse,
+  HAProxySaveConfigRequest,
+  HAProxyTestConfigResponse,
+  HAProxyDeployRequest,
+  HAProxyPrereqCheck,
+  HAProxyPreflightResponse,
+  HAProxyCertInfo,
+} from './types/haproxy.js';
+
+export type {
   ApiResponse,
   ServiceWithStatus,
   ServiceDetailResponse,
@@ -54,7 +66,7 @@ export type {
 } from './types/api.js';
 
 // Constants
-export { SERVICE_CATALOG, getDeploymentOrder } from './constants/catalog.js';
+export { SERVICE_CATALOG, PLATFORM_HOSTNAME, getDeploymentOrder } from './constants/catalog.js';
 export { UVIC_COLORS, PHASE_COLORS, PHASE_LABELS } from './constants/colors.js';
 
 // Validation

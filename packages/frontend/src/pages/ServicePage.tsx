@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Navigate } from 'react-router-dom';
 import {
   Play,
   Pause,
@@ -10,9 +10,10 @@ import {
   Activity,
   Terminal,
   Shield,
+  ExternalLink,
 } from 'lucide-react';
 import type { ServiceId } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME } from '@skaha-orc/shared';
 import { useDeploy, useUninstall, usePause, useResume } from '@/hooks/use-services';
 import { useServiceLive } from '@/hooks/use-services-live';
 import { StatusBadge } from '@/components/service/StatusBadge';
@@ -49,6 +50,10 @@ export function ServicePage() {
   const pause = usePause(serviceId);
   const resume = useResume(serviceId);
 
+  if (serviceId === 'haproxy') {
+    return <Navigate to="/haproxy" replace />;
+  }
+
   if (!SERVICE_IDS.includes(serviceId)) {
     return <div className="text-tall-poppy-red">Unknown service: {id}</div>;
   }
@@ -73,7 +78,22 @@ export function ServicePage() {
             <h2 className="text-xl font-semibold text-gray-900">{def.name}</h2>
             {service && <StatusBadge phase={service.status.phase} />}
           </div>
-          <p className="text-sm text-neutral-gray mt-1">{def.description}</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-sm text-neutral-gray">{def.description}</p>
+            {def.endpointPath &&
+              service &&
+              (service.status.phase === 'deployed' || service.status.phase === 'healthy') && (
+                <a
+                  href={`https://${PLATFORM_HOSTNAME}${def.endpointPath}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs font-medium text-congress-blue hover:text-prussian-blue transition-colors whitespace-nowrap"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Open Service
+                </a>
+              )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

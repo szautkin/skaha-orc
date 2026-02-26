@@ -161,3 +161,21 @@ export function useResumeAll() {
     },
   });
 }
+
+export function useHostIp() {
+  return useQuery({
+    queryKey: ['host-ip'],
+    queryFn: api.getHostIp,
+  });
+}
+
+export function useSetHostIp() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ip: string) => api.setHostIp(ip),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['host-ip'] });
+    },
+  });
+}

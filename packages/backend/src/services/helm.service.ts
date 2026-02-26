@@ -4,6 +4,8 @@ import { SERVICE_CATALOG } from '@skaha-orc/shared';
 import { config, valuesFilePath } from '../config.js';
 import { eventBus } from '../sse/event-bus.js';
 import { logger } from '../logger.js';
+import { waitForHealthy } from './health.service.js';
+import { isHAProxyRunning, isHAProxyPaused, deployHAProxy, stopHAProxy, detectDeployMode } from './haproxy.service.js';
 
 interface HelmRelease {
   name: string;
@@ -59,6 +61,17 @@ export async function helmDeploy(
   options: { dryRun?: boolean } = {},
 ): Promise<{ success: boolean; output: string }> {
   const def = SERVICE_CATALOG[serviceId];
+
+  if (def.chartSource.type === 'haproxy') {
+    try {
+      const mode = await detectDeployMode() ?? 'kubernetes';
+      const output = await deployHAProxy(mode);
+      return { success: true, output };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, output: message };
+    }
+  }
 
   if (def.chartSource.type === 'kubectl') {
     return kubectlApply(serviceId);
@@ -118,6 +131,11 @@ export async function helmDeploy(
       timestamp: timestamp(),
     });
 
+    // Fire-and-forget health check
+    waitForHealthy(serviceId).catch((e) =>
+      logger.error({ serviceId, err: e }, 'Health check failed unexpectedly'),
+    );
+
     return { success: true, output };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -166,6 +184,11 @@ async function kubectlApply(
       timestamp: timestamp(),
     });
 
+    // Fire-and-forget health check
+    waitForHealthy(serviceId).catch((e) =>
+      logger.error({ serviceId, err: e }, 'Health check failed unexpectedly'),
+    );
+
     return { success: true, output };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -186,6 +209,18 @@ export async function helmUninstall(
   serviceId: ServiceId,
 ): Promise<{ success: boolean; output: string }> {
   const def = SERVICE_CATALOG[serviceId];
+
+  if (def.chartSource.type === 'haproxy') {
+    try {
+      const mode = await detectDeployMode() ?? 'kubernetes';
+      const output = await stopHAProxy(mode);
+      return { success: true, output };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, output: message };
+    }
+  }
+
   const releaseName = getReleaseName(serviceId);
 
   try {
@@ -204,6 +239,34 @@ export async function helmUninstall(
 
 export async function getServicePhase(serviceId: ServiceId): Promise<DeploymentPhase> {
   const def = SERVICE_CATALOG[serviceId];
+
+  if (def.chartSource.type === 'haproxy') {
+    try {
+      const mode = await detectDeployMode();
+      if (!mode) return 'not_installed';
+      if (await isHAProxyPaused(mode)) return 'paused';
+      if (await isHAProxyRunning(mode)) return 'deployed';
+
+      // Deployment exists but not running — check if pods are crash-looping
+      if (mode === 'kubernetes') {
+        try {
+          const { stdout } = await execa(config.kubectlBinary, [
+            'get', 'pods', '-l', 'app=haproxy',
+            '-n', def.namespace,
+            '-o', 'jsonpath={.items[0].status.containerStatuses[0].state.waiting.reason}',
+          ]);
+          const reason = stdout.trim();
+          if (reason === 'CrashLoopBackOff' || reason === 'Error' || reason === 'ImagePullBackOff') {
+            return 'failed';
+          }
+        } catch { /* no pods yet — still deploying */ }
+      }
+
+      return 'deploying';
+    } catch {
+      return 'not_installed';
+    }
+  }
 
   if (def.chartSource.type === 'kubectl') {
     // For kubectl resources, check if PVCs exist

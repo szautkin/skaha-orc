@@ -17,7 +17,7 @@ export function useDeployAll() {
       const event = data as DeploymentEvent;
       setEvents((prev) => [...prev, event]);
 
-      if (event.type === 'phase_change' && event.phase) {
+      if ((event.type === 'phase_change' || event.type === 'error') && event.phase) {
         useServicePhaseStore.getState().setOptimistic(event.serviceId, event.phase);
       }
 

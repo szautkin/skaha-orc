@@ -151,8 +151,8 @@ export async function pauseAll(
 
   for (const serviceId of order) {
     const def = SERVICE_CATALOG[serviceId];
-    if (def.chartSource.type === 'kubectl') {
-      // Can't scale PV/PVC resources — skip
+    if (def.chartSource.type === 'kubectl' || def.chartSource.type === 'haproxy') {
+      // Can't scale PV/PVC resources or HAProxy via replicas — skip
       progress.pendingServices = progress.pendingServices.filter((id) => id !== serviceId);
       progress.completedServices.push(serviceId);
       continue;
@@ -224,7 +224,7 @@ export async function resumeAll(
 
   for (const serviceId of order) {
     const def = SERVICE_CATALOG[serviceId];
-    if (def.chartSource.type === 'kubectl') {
+    if (def.chartSource.type === 'kubectl' || def.chartSource.type === 'haproxy') {
       progress.pendingServices = progress.pendingServices.filter((id) => id !== serviceId);
       progress.completedServices.push(serviceId);
       continue;

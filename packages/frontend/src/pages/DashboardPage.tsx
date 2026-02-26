@@ -3,6 +3,7 @@ import { Play, Pause, Square, RotateCcw, Loader2 } from 'lucide-react';
 import { SERVICE_IDS } from '@skaha-orc/shared';
 import { useStopAll, usePauseAll, useResumeAll } from '@/hooks/use-services';
 import { useServicesLive } from '@/hooks/use-services-live';
+import { HostIpWidget } from '@/components/dashboard/HostIpWidget';
 import { DependencyGraph } from '@/components/graph/DependencyGraph';
 import { ServiceCard } from '@/components/service/ServiceCard';
 import { toast } from 'sonner';
@@ -40,10 +41,11 @@ export function DashboardPage() {
 
   return (
     <div className="h-full flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-gray-900">Platform Overview</h2>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-gray-900">Platform Overview</h2>
 
-        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
           <button
             className="flex items-center gap-1.5 bg-congress-blue text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-prussian-blue transition-colors disabled:opacity-50"
             onClick={() => navigate('/deploy')}
@@ -105,7 +107,9 @@ export function DashboardPage() {
             )}
             Stop All
           </button>
+          </div>
         </div>
+        <HostIpWidget />
       </div>
 
       <div className="flex-1 grid grid-cols-5 gap-6 min-h-0">

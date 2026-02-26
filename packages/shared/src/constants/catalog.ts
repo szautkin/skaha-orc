@@ -1,5 +1,7 @@
 import type { ServiceDefinition, ServiceId } from '../types/services.js';
 
+export const PLATFORM_HOSTNAME = 'haproxy.cadc.dao.nrc.ca';
+
 export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
   base: {
     id: 'base',
@@ -10,6 +12,22 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'base' },
     valuesFile: 'base-values.yaml',
     optional: false,
+    endpointPath: null,
+    k8sServiceName: null,
+    k8sServicePort: null,
+  },
+  haproxy: {
+    id: 'haproxy',
+    name: 'HAProxy',
+    description: 'Reverse proxy and load balancer',
+    namespace: 'skaha-system',
+    dependencies: ['base'],
+    chartSource: { type: 'haproxy' },
+    valuesFile: null,
+    optional: false,
+    endpointPath: null,
+    k8sServiceName: 'haproxy',
+    k8sServicePort: 443,
   },
   reg: {
     id: 'reg',
@@ -20,6 +38,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     chartSource: { type: 'local', path: '/Users/szautkin/reviews/helm_assets/reg' },
     valuesFile: null,
     optional: false,
+    endpointPath: '/reg',
+    k8sServiceName: 'reg-nginx-svc',
+    k8sServicePort: 80,
   },
   volumes: {
     id: 'volumes',
@@ -30,6 +51,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     chartSource: { type: 'kubectl', path: 'volumes.yaml' },
     valuesFile: 'volumes.yaml',
     optional: false,
+    endpointPath: null,
+    k8sServiceName: null,
+    k8sServicePort: null,
   },
   'posix-mapper-db': {
     id: 'posix-mapper-db',
@@ -40,6 +64,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     chartSource: { type: 'kubectl', path: 'posix-mapper-postgres.yaml' },
     valuesFile: 'posix-mapper-postgres.yaml',
     optional: false,
+    endpointPath: null,
+    k8sServiceName: 'posix-mapper-postgres',
+    k8sServicePort: 5432,
   },
   'posix-mapper': {
     id: 'posix-mapper',
@@ -50,6 +77,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'posixmapper' },
     valuesFile: 'posix-mapper-values.yaml',
     optional: false,
+    endpointPath: '/posix-mapper',
+    k8sServiceName: 'posix-mapper-tomcat-svc',
+    k8sServicePort: 8080,
   },
   skaha: {
     id: 'skaha',
@@ -60,6 +90,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'skaha' },
     valuesFile: 'skaha-values.yaml',
     optional: false,
+    endpointPath: '/skaha',
+    k8sServiceName: 'skaha-tomcat-svc',
+    k8sServicePort: 8080,
   },
   cavern: {
     id: 'cavern',
@@ -73,6 +106,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     },
     valuesFile: 'cavern-values.yaml',
     optional: false,
+    endpointPath: '/cavern',
+    k8sServiceName: 'cavern-tomcat-svc',
+    k8sServicePort: 8080,
   },
   'science-portal': {
     id: 'science-portal',
@@ -86,6 +122,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     },
     valuesFile: 'science-portal-values.yaml',
     optional: false,
+    endpointPath: '/science-portal',
+    k8sServiceName: 'science-portal-tomcat-svc',
+    k8sServicePort: 8080,
   },
   'storage-ui': {
     id: 'storage-ui',
@@ -96,6 +135,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     chartSource: { type: 'repo', repo: 'science-platform-client', chart: 'storageui' },
     valuesFile: 'storage.yaml',
     optional: false,
+    endpointPath: '/storage',
+    k8sServiceName: 'storage-ui-tomcat-svc',
+    k8sServicePort: 8080,
   },
   doi: {
     id: 'doi',
@@ -109,6 +151,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     },
     valuesFile: 'doi-values.yaml',
     optional: true,
+    endpointPath: '/doi',
+    k8sServiceName: 'doi-tomcat',
+    k8sServicePort: 80,
   },
   'mock-ac': {
     id: 'mock-ac',
@@ -122,6 +167,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     },
     valuesFile: null,
     optional: true,
+    endpointPath: '/ac',
+    k8sServiceName: 'mock-ac',
+    k8sServicePort: 8080,
   },
 };
 

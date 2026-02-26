@@ -15,9 +15,9 @@ function getStepStatus(
   const lastPhaseEvent = [...serviceEvents].reverse().find((e) => e.type === 'phase_change' || e.type === 'error');
 
   if (!lastPhaseEvent) return 'pending';
-  if (lastPhaseEvent.phase === 'deployed') return 'success';
+  if (lastPhaseEvent.phase === 'deployed' || lastPhaseEvent.phase === 'healthy') return 'success';
   if (lastPhaseEvent.phase === 'failed' || lastPhaseEvent.type === 'error') return 'failed';
-  if (lastPhaseEvent.phase === 'deploying') return 'deploying';
+  if (lastPhaseEvent.phase === 'deploying' || lastPhaseEvent.phase === 'waiting_ready') return 'deploying';
   return 'pending';
 }
 

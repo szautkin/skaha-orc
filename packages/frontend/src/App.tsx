@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ServicePage } from '@/pages/ServicePage';
 import { DeployPage } from '@/pages/DeployPage';
+import { HAProxyPage } from '@/pages/HAProxyPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,7 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="/services/:id" element={<ServicePage />} />
             <Route path="/deploy" element={<DeployPage />} />
+            <Route path="/haproxy" element={<HAProxyPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -24,6 +24,7 @@ interface ServicePhaseState {
 
 const TERMINAL_PHASES: ReadonlySet<DeploymentPhase> = new Set([
   'deployed',
+  'healthy',
   'paused',
   'failed',
   'not_installed',

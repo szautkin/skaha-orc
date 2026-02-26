@@ -4,7 +4,7 @@ import { resolve } from 'path';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
-import type { CertInfo, CaInfo } from '@skaha-orc/shared';
+import type { CertInfo, CaInfo, HAProxyCertInfo } from '@skaha-orc/shared';
 import { SERVICE_CATALOG } from '@skaha-orc/shared';
 import type { ServiceId } from '@skaha-orc/shared';
 import { readValuesFile, writeValuesFile } from './yaml.service.js';
@@ -14,8 +14,9 @@ import { logger } from '../logger.js';
 const execFileAsync = promisify(execFile);
 
 const DEV_CONFIG_DIR = resolve(config.helmConfigDir, '..', 'dev_config');
-const CA_CERT_PATH = resolve(DEV_CONFIG_DIR, 'ca-cert.crt');
+export const CA_CERT_PATH = resolve(DEV_CONFIG_DIR, 'ca-cert.crt');
 const CA_KEY_PATH = resolve(DEV_CONFIG_DIR, 'ca-key.key');
+export const HAPROXY_CERT_PATH = resolve(DEV_CONFIG_DIR, 'server-cert.pem');
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -239,6 +240,44 @@ export async function generateSignedCert(opts: {
       await writeFile(f, '', 'utf-8').catch(() => {});
     }
   }
+}
+
+export async function getHAProxyCertInfo(): Promise<HAProxyCertInfo> {
+  if (!(await fileExists(HAPROXY_CERT_PATH))) {
+    return { exists: false, path: HAPROXY_CERT_PATH };
+  }
+
+  try {
+    const pem = await readFile(HAPROXY_CERT_PATH, 'utf-8');
+    const parsed = await parsePem(pem);
+    const expiry = computeExpiry(parsed.notAfter);
+    return {
+      exists: true,
+      path: HAPROXY_CERT_PATH,
+      subject: parsed.subject,
+      issuer: parsed.issuer,
+      notAfter: parsed.notAfter,
+      isExpired: expiry.isExpired,
+      daysUntilExpiry: expiry.daysUntilExpiry,
+    };
+  } catch (err) {
+    logger.error({ err }, 'Failed to read HAProxy cert');
+    return { exists: false, path: HAPROXY_CERT_PATH };
+  }
+}
+
+export async function generateHAProxyCert(opts: {
+  cn: string;
+  days: number;
+}): Promise<HAProxyCertInfo> {
+  const { certPem, keyPem } = await generateSignedCert(opts);
+  const combinedPem = `${certPem}\n${keyPem}`;
+
+  await mkdir(DEV_CONFIG_DIR, { recursive: true });
+  await writeFile(HAPROXY_CERT_PATH, combinedPem, 'utf-8');
+
+  logger.info({ cn: opts.cn, days: opts.days }, 'Generated HAProxy server cert');
+  return getHAProxyCertInfo();
 }
 
 export async function updateCertSecret(

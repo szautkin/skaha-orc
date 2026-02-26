@@ -93,7 +93,7 @@ export function DependencyGraph({ services }: DependencyGraphProps) {
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      navigate(`/services/${node.id}`);
+      navigate(node.id === 'haproxy' ? '/haproxy' : `/services/${node.id}`);
     },
     [navigate],
   );

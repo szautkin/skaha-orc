@@ -5,6 +5,8 @@ export type DeploymentPhase =
   | 'pending'
   | 'deploying'
   | 'deployed'
+  | 'waiting_ready'
+  | 'healthy'
   | 'paused'
   | 'failed'
   | 'uninstalling';
@@ -21,11 +23,12 @@ export interface DeploymentStatus {
 }
 
 export interface DeploymentEvent {
-  type: 'phase_change' | 'log' | 'error' | 'complete';
+  type: 'phase_change' | 'log' | 'error' | 'complete' | 'health_check';
   serviceId: ServiceId;
   phase?: DeploymentPhase;
   message: string;
   timestamp: string;
+  healthStep?: string;
 }
 
 export interface DeployAllRequest {

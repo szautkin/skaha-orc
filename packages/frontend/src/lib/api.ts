@@ -107,6 +107,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  getHostIp: () => request<{ ip: string | null; hostname: string }>('/services/host-ip'),
+
+  setHostIp: (ip: string) =>
+    request<{ updated: number }>('/services/host-ip', {
+      method: 'PUT',
+      body: JSON.stringify({ ip }),
+    }),
 };
 
 export function createSSEStream(path: string, onMessage: (data: unknown) => void): () => void {

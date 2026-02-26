@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Server, Play } from 'lucide-react';
+import { LayoutDashboard, Server, Play, Network } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SERVICE_CATALOG, SERVICE_IDS } from '@skaha-orc/shared';
 
@@ -37,7 +37,7 @@ export function Sidebar() {
           </p>
         </div>
 
-        {SERVICE_IDS.map((id) => {
+        {SERVICE_IDS.filter((id) => id !== 'haproxy').map((id) => {
           const def = SERVICE_CATALOG[id];
           return (
             <NavLink
@@ -57,6 +57,27 @@ export function Sidebar() {
             </NavLink>
           );
         })}
+
+        <div className="pt-4 pb-2 px-3">
+          <p className="text-xs font-semibold text-neutral-gray uppercase tracking-wider">
+            Infrastructure
+          </p>
+        </div>
+
+        <NavLink
+          to="/haproxy"
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors',
+              isActive
+                ? 'bg-light-blue text-congress-blue font-medium'
+                : 'text-neutral-gray hover:bg-gray-100 hover:text-gray-900',
+            )
+          }
+        >
+          <Network className="w-3.5 h-3.5" />
+          HAProxy
+        </NavLink>
       </nav>
     </aside>
   );

@@ -1,5 +1,6 @@
 export const SERVICE_IDS = [
   'base',
+  'haproxy',
   'reg',
   'volumes',
   'posix-mapper-db',
@@ -17,7 +18,8 @@ export type ServiceId = (typeof SERVICE_IDS)[number];
 export type ChartSource =
   | { type: 'repo'; repo: string; chart: string }
   | { type: 'local'; path: string }
-  | { type: 'kubectl'; path: string };
+  | { type: 'kubectl'; path: string }
+  | { type: 'haproxy' };
 
 export interface ServiceDefinition {
   id: ServiceId;
@@ -28,6 +30,9 @@ export interface ServiceDefinition {
   chartSource: ChartSource;
   valuesFile: string | null;
   optional: boolean;
+  endpointPath: string | null;
+  k8sServiceName: string | null;
+  k8sServicePort: number | null;
 }
 
 export interface ResourceSpec {

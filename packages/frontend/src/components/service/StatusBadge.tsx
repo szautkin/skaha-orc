@@ -7,6 +7,8 @@ const phaseStyles: Record<DeploymentPhase, string> = {
   pending: 'bg-gray-100 text-neutral-gray',
   deploying: 'bg-amber-100 text-amber-800 animate-pulse',
   deployed: 'bg-emerald-100 text-emerald-800',
+  waiting_ready: 'bg-amber-100 text-amber-800 animate-pulse',
+  healthy: 'bg-emerald-100 text-emerald-800',
   paused: 'bg-blue-100 text-congress-blue',
   failed: 'bg-red-100 text-tall-poppy-red',
   uninstalling: 'bg-amber-100 text-amber-800 animate-pulse',

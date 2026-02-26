@@ -30,7 +30,9 @@ export function LogStream({ events }: LogStreamProps) {
                 ? 'text-buttercup-yellow'
                 : event.type === 'complete'
                   ? 'text-emerald-400'
-                  : 'text-gray-300';
+                  : event.type === 'health_check'
+                    ? 'text-cyan-400'
+                    : 'text-gray-300';
 
           return (
             <div key={i} className={`leading-5 ${color}`}>

@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import type { ServiceId, ApiResponse, ServiceWithStatus } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS, configUpdateSchema } from '@skaha-orc/shared';
+import type { ServiceId, ApiResponse, ServiceWithStatus, ExtraHost } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME, configUpdateSchema } from '@skaha-orc/shared';
 import { getServiceStatus, getAllStatuses } from '../services/status.service.js';
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
+import { detectDeployMode } from '../services/haproxy.service.js';
 import { logger } from '../logger.js';
 
 const router = Router();
@@ -17,6 +18,85 @@ router.get('/services', async (_req, res) => {
   } catch (err) {
     logger.error({ err }, 'Failed to list services');
     res.status(500).json({ success: false, error: 'Failed to fetch services' });
+  }
+});
+
+router.get('/services/host-ip', async (_req, res) => {
+  try {
+    for (const def of Object.values(SERVICE_CATALOG)) {
+      if (!def.valuesFile) continue;
+
+      let config: Record<string, unknown>;
+      try {
+        config = await readValuesFile(def.valuesFile);
+      } catch {
+        continue; // skip multi-document or unreadable files
+      }
+
+      const deployment = config.deployment as
+        | { extraHosts?: ExtraHost[] }
+        | undefined;
+      if (!deployment?.extraHosts) continue;
+
+      const entry = deployment.extraHosts.find(
+        (h) => h.hostname === PLATFORM_HOSTNAME,
+      );
+      if (entry) {
+        res.json({ success: true, data: { ip: entry.ip, hostname: entry.hostname } });
+        return;
+      }
+    }
+
+    res.json({ success: true, data: { ip: null, hostname: PLATFORM_HOSTNAME } });
+  } catch (err) {
+    logger.error({ err }, 'Failed to read host IP');
+    res.status(500).json({ success: false, error: 'Failed to read host IP' });
+  }
+});
+
+router.put('/services/host-ip', async (req, res) => {
+  const { ip } = req.body as { ip?: string };
+  if (!ip || typeof ip !== 'string') {
+    res.status(400).json({ success: false, error: 'Missing or invalid ip' });
+    return;
+  }
+
+  try {
+    let updated = 0;
+
+    for (const def of Object.values(SERVICE_CATALOG)) {
+      if (!def.valuesFile) continue;
+
+      let config: Record<string, unknown>;
+      try {
+        config = await readValuesFile(def.valuesFile);
+      } catch {
+        continue; // skip multi-document or unreadable files
+      }
+
+      const deployment = config.deployment as
+        | { extraHosts?: ExtraHost[] }
+        | undefined;
+      if (!deployment?.extraHosts) continue;
+
+      let changed = false;
+      for (const host of deployment.extraHosts) {
+        if (host.hostname === PLATFORM_HOSTNAME && host.ip !== ip) {
+          host.ip = ip;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await writeValuesFile(def.valuesFile, config);
+        updated++;
+      }
+    }
+
+    res.json({ success: true, data: { updated } });
+  } catch (err) {
+    logger.error({ err }, 'Failed to update host IP');
+    res.status(500).json({ success: false, error: 'Failed to update host IP' });
   }
 });
 
@@ -136,6 +216,19 @@ router.post('/services/:id/pause', async (req, res) => {
 
   const def = SERVICE_CATALOG[serviceId];
 
+  if (def.chartSource.type === 'haproxy') {
+    try {
+      const mode = await detectDeployMode();
+      if (mode !== 'kubernetes') {
+        res.status(400).json({ success: false, error: `Pause not supported for HAProxy in ${mode ?? 'unknown'} mode. Use stop instead.` });
+        return;
+      }
+    } catch {
+      res.status(400).json({ success: false, error: 'Pause not supported for HAProxy: unable to detect deploy mode. Use stop instead.' });
+      return;
+    }
+  }
+
   try {
     const result = await scaleDeployment(def.namespace, serviceId, 0);
     res.json({ success: result.success, data: { output: result.output } });
@@ -154,6 +247,19 @@ router.post('/services/:id/resume', async (req, res) => {
   }
 
   const def = SERVICE_CATALOG[serviceId];
+
+  if (def.chartSource.type === 'haproxy') {
+    try {
+      const mode = await detectDeployMode();
+      if (mode !== 'kubernetes') {
+        res.status(400).json({ success: false, error: `Resume not supported for HAProxy in ${mode ?? 'unknown'} mode. Use deploy instead.` });
+        return;
+      }
+    } catch {
+      res.status(400).json({ success: false, error: 'Resume not supported for HAProxy: unable to detect deploy mode. Use deploy instead.' });
+      return;
+    }
+  }
 
   try {
     const result = await scaleDeployment(def.namespace, serviceId, 1);

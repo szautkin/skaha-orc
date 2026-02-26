@@ -209,7 +209,7 @@ export async function scaleDeployment(
  */
 export async function isServicePaused(serviceId: ServiceId): Promise<boolean> {
   const def = SERVICE_CATALOG[serviceId];
-  if (def.chartSource.type === 'kubectl') return false;
+  if (def.chartSource.type === 'kubectl' || def.chartSource.type === 'haproxy') return false;
 
   const { deployments } = await getDeploymentNames(def.namespace, serviceId);
   if (deployments.length === 0) return false;
