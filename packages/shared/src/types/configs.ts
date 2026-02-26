@@ -226,6 +226,52 @@ export interface DoiConfig {
   secrets: Record<string, Record<string, string>>;
 }
 
+export interface DexConfig {
+  issuer: string;
+  storage: {
+    type: string;
+    config: { file: string };
+  };
+  web: {
+    http: string;
+  };
+  staticClients: Array<{
+    id: string;
+    redirectURIs: string[];
+    name: string;
+    secret: string;
+  }>;
+  enablePasswordDB: boolean;
+  staticPasswords: Array<{
+    email: string;
+    hash: string;
+    username: string;
+    userID: string;
+  }>;
+}
+
+export interface KeycloakConfig {
+  replicas: number;
+  auth: {
+    adminUser: string;
+    adminPassword: string;
+  };
+  postgresql: {
+    enabled: boolean;
+  };
+  proxy: string;
+  httpRelativePath: string;
+  extraEnvVars: Array<{ name: string; value: string }>;
+  service: {
+    type: string;
+    ports: { http: number };
+  };
+  resources: {
+    requests: { memory: string; cpu: string };
+    limits: { memory: string; cpu: string };
+  };
+}
+
 export type ServiceConfig =
   | BaseConfig
   | PosixMapperConfig
@@ -234,4 +280,6 @@ export type ServiceConfig =
   | CavernConfig
   | StorageUiConfig
   | DoiConfig
+  | DexConfig
+  | KeycloakConfig
   | Record<string, unknown>;

@@ -68,3 +68,17 @@ export const deployAllRequestSchema = z.object({
 export const configUpdateSchema = z.object({
   config: z.record(z.unknown()),
 });
+
+const oidcClientConfigSchema = z.object({
+  clientID: z.string().min(1),
+  clientSecret: z.string().min(1),
+  redirectURI: z.string().url(),
+  callbackURI: z.string().url(),
+  scope: z.string().min(1),
+});
+
+export const platformOidcSettingsSchema = z.object({
+  issuerUri: z.string().url(),
+  sciencePortal: oidcClientConfigSchema,
+  storageUi: oidcClientConfigSchema,
+});

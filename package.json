@@ -13,6 +13,7 @@
     "lint": "eslint packages/*/src/**/*.{ts,tsx}",
     "format": "prettier --write \"packages/*/src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"packages/*/src/**/*.{ts,tsx}\"",
+    "setup": "node scripts/setup.mjs",
     "test": "jest --passWithNoTests"
   },
   "devDependencies": {

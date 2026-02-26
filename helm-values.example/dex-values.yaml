@@ -1,0 +1,29 @@
+issuer: https://haproxy.cadc.dao.nrc.ca/dex
+
+storage:
+  type: sqlite3
+  config:
+    file: /var/dex/dex.db
+
+web:
+  http: 0.0.0.0:5556
+
+staticClients:
+  - id: science-portal
+    redirectURIs:
+      - https://haproxy.cadc.dao.nrc.ca/science-portal/oidc-callback
+    name: Science Portal
+    secret: CHANGE_ME_science_portal_secret
+  - id: storage-ui
+    redirectURIs:
+      - https://haproxy.cadc.dao.nrc.ca/storage/oidc-callback
+    name: Storage UI
+    secret: CHANGE_ME_storage_ui_secret
+
+enablePasswordDB: true
+
+staticPasswords:
+  - email: admin@example.com
+    hash: $2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W
+    username: admin
+    userID: 08a8684b-db88-4b73-90a9-3cd1661f5466

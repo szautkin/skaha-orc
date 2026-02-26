@@ -16,6 +16,32 @@ const ASCII_RE = /^[\x20-\x7E]+$/;
 
 const router = Router();
 
+/**
+ * @openapi
+ * /certs/ca:
+ *   get:
+ *     tags: [Certificates]
+ *     summary: Get CA certificate info
+ *     description: Returns information about the platform CA certificate, or indicates it does not exist.
+ *     responses:
+ *       200:
+ *         description: CA info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/CaInfo'
+ *       500:
+ *         description: Failed to get CA info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.get('/certs/ca', async (_req, res) => {
   try {
     const info = await getCaInfo();
@@ -26,6 +52,44 @@ router.get('/certs/ca', async (_req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /certs/ca/generate:
+ *   post:
+ *     tags: [Certificates]
+ *     summary: Generate a self-signed CA
+ *     description: Generates a new self-signed CA certificate and private key, stored in dev_config/.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GenerateCaRequest'
+ *     responses:
+ *       200:
+ *         description: Generated CA info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/CaInfo'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Failed to generate CA
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.post('/certs/ca/generate', async (req, res) => {
   const { cn, org, days } = req.body as { cn?: string; org?: string; days?: number };
   if (!cn || !org || !days) {
@@ -55,6 +119,44 @@ router.post('/certs/ca/generate', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /certs/ca/upload:
+ *   post:
+ *     tags: [Certificates]
+ *     summary: Upload a CA certificate and key
+ *     description: Uploads an existing CA certificate and private key (PEM format) for signing service certificates.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UploadCaRequest'
+ *     responses:
+ *       200:
+ *         description: Uploaded CA info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/CaInfo'
+ *       400:
+ *         description: Missing certPem or keyPem
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Failed to upload CA
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.post('/certs/ca/upload', async (req, res) => {
   const { certPem, keyPem } = req.body as { certPem?: string; keyPem?: string };
   if (!certPem || !keyPem) {
@@ -71,6 +173,47 @@ router.post('/certs/ca/upload', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /certs/{serviceId}:
+ *   get:
+ *     tags: [Certificates]
+ *     summary: List certificates for a service
+ *     description: Lists all TLS certificates found in the service's Helm values secrets block.
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The service identifier
+ *     responses:
+ *       200:
+ *         description: Array of certificate info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/CertInfo'
+ *       404:
+ *         description: Unknown service
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Failed to list certificates
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.get('/certs/:serviceId', async (req, res) => {
   const serviceId = req.params.serviceId as ServiceId;
   if (!SERVICE_IDS.includes(serviceId)) {
@@ -87,6 +230,60 @@ router.get('/certs/:serviceId', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /certs/{serviceId}/generate:
+ *   post:
+ *     tags: [Certificates]
+ *     summary: Generate a CA-signed certificate for a service
+ *     description: Generates a new certificate signed by the platform CA and updates the service's Helm values secrets.
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The service identifier
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GenerateCertRequest'
+ *     responses:
+ *       200:
+ *         description: Certificate generated and secret updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         message:
+ *                           type: string
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       404:
+ *         description: Unknown service
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Failed to generate certificate
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.post('/certs/:serviceId/generate', async (req, res) => {
   const serviceId = req.params.serviceId as ServiceId;
   if (!SERVICE_IDS.includes(serviceId)) {

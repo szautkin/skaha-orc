@@ -2,9 +2,12 @@
 export type {
   ServiceId,
   ServiceDefinition,
+  ServiceTier,
   ChartSource,
   ResourceSpec,
   OidcConfig,
+  OidcClientConfig,
+  PlatformOidcSettings,
   PostgresConfig,
   RedisConfig,
   ExtraHost,
@@ -21,6 +24,8 @@ export type {
   CavernConfig,
   StorageUiConfig,
   DoiConfig,
+  DexConfig,
+  KeycloakConfig,
   ServiceConfig,
 } from './types/configs.js';
 
@@ -63,11 +68,23 @@ export type {
   EventsResponse,
   DeployRequest,
   ConfigUpdateRequest,
+  PreflightCheck,
+  PreflightResult,
 } from './types/api.js';
 
 // Constants
-export { SERVICE_CATALOG, PLATFORM_HOSTNAME, getDeploymentOrder } from './constants/catalog.js';
-export { UVIC_COLORS, PHASE_COLORS, PHASE_LABELS } from './constants/colors.js';
+export {
+  SERVICE_CATALOG,
+  PLATFORM_HOSTNAME,
+  TIER_ORDER,
+  TIER_LABELS,
+  DEPLOYMENT_PROFILES,
+  getServicesByTier,
+  getDeploymentOrder,
+} from './constants/catalog.js';
+export type { DeploymentProfileId, DeploymentProfile } from './constants/catalog.js';
+
+export { UVIC_COLORS, PHASE_COLORS, PHASE_LABELS, TIER_COLORS } from './constants/colors.js';
 
 // Validation
 export {
@@ -81,4 +98,5 @@ export {
   deployRequestSchema,
   deployAllRequestSchema,
   configUpdateSchema,
+  platformOidcSettingsSchema,
 } from './validation/schemas.js';

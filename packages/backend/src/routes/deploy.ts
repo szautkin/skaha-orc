@@ -7,6 +7,44 @@ import { logger } from '../logger.js';
 
 const router = Router();
 
+/**
+ * @openapi
+ * /deploy-all:
+ *   post:
+ *     tags: [Deployment]
+ *     summary: Deploy multiple services
+ *     description: Deploys the given services in dependency order. Supports dry-run mode.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeployAllRequest'
+ *     responses:
+ *       200:
+ *         description: Deployment progress
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/DeployAllProgress'
+ *       400:
+ *         description: Invalid request body
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Deploy-all failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.post('/deploy-all', async (req, res) => {
   const parsed = deployAllRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -25,6 +63,44 @@ router.post('/deploy-all', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /stop-all:
+ *   post:
+ *     tags: [Deployment]
+ *     summary: Stop (uninstall) multiple services
+ *     description: Uninstalls the given services in reverse dependency order.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeployAllRequest'
+ *     responses:
+ *       200:
+ *         description: Stop progress
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/DeployAllProgress'
+ *       400:
+ *         description: Invalid request body
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Stop-all failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.post('/stop-all', async (req, res) => {
   const parsed = deployAllRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -41,6 +117,44 @@ router.post('/stop-all', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /pause-all:
+ *   post:
+ *     tags: [Deployment]
+ *     summary: Pause (scale to 0) multiple services
+ *     description: Scales all given services to 0 replicas.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeployAllRequest'
+ *     responses:
+ *       200:
+ *         description: Pause progress
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/DeployAllProgress'
+ *       400:
+ *         description: Invalid request body
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Pause-all failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.post('/pause-all', async (req, res) => {
   const parsed = deployAllRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -57,6 +171,44 @@ router.post('/pause-all', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /resume-all:
+ *   post:
+ *     tags: [Deployment]
+ *     summary: Resume (scale to 1) multiple services
+ *     description: Scales all given services back to 1 replica.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DeployAllRequest'
+ *     responses:
+ *       200:
+ *         description: Resume progress
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/DeployAllProgress'
+ *       400:
+ *         description: Invalid request body
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         description: Resume-all failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.post('/resume-all', async (req, res) => {
   const parsed = deployAllRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -73,6 +225,22 @@ router.post('/resume-all', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /deploy-all/stream:
+ *   get:
+ *     tags: [Deployment]
+ *     summary: SSE stream for deploy-all progress
+ *     description: Server-Sent Events stream that emits real-time deployment progress events during deploy-all, stop-all, pause-all, or resume-all operations.
+ *     responses:
+ *       200:
+ *         description: SSE event stream
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               type: string
+ *               description: Newline-delimited SSE events with JSON data payloads
+ */
 router.get('/deploy-all/stream', (_req, res) => {
   eventBus.addClient(res);
 });

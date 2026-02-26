@@ -1,15 +1,83 @@
 # Skaha-Orc
 
-A deployment orchestrator for the [Skaha](https://github.com/opencadc/science-platform) astronomy platform. Provides a web UI and REST API for managing Helm releases, Kubernetes resources, HAProxy routing, and TLS certificates.
+A deployment orchestrator and companion UI for the [OpenCADC](https://github.com/opencadc) astronomy platform stack. Skaha-Orc provides a web interface and REST API for managing Helm releases, Kubernetes resources, HAProxy routing, and TLS certificates — designed to work alongside [opencadc/deployments](https://github.com/opencadc/deployments) and the broader OpenCADC ecosystem.
+
+## Relationship to OpenCADC
+
+Skaha-Orc orchestrates the services defined in the [OpenCADC Science Platform](https://github.com/opencadc/science-platform), including Skaha, Cavern, Science Portal, POSIX Mapper, and others. It consumes the same Helm charts published by [opencadc/deployments](https://github.com/opencadc/deployments) and provides:
+
+- A visual dashboard showing service dependencies, deployment status, and pod health
+- One-click deploy/pause/resume/uninstall for individual services or the entire platform
+- Helm values editing with live YAML validation
+- HAProxy config generation, testing, and deployment based on the service catalog
+- TLS certificate management (CA generation, signed certs, per-service secrets)
+- Multi-cluster support via kubectl context switching
+
+Where `opencadc/deployments` provides CI/CD automation and chart publishing, Skaha-Orc provides the interactive operator experience — particularly useful during initial platform setup, debugging, and development environments.
+
+## Features
+
+- **Dashboard** — real-time service status, pod health, and deployment phases at a glance
+- **Dependency graph** — visual DAG of service relationships with topological deploy ordering
+- **Helm values editing** — per-service config forms with live YAML validation and type-safe fields
+- **ExtraHosts management** — bulk IP/hostname override editing across all services
+- **Certificate lifecycle** — generate CAs, sign certs, view expiry, renew — all from the UI
+- **HAProxy orchestration** — generate, test, deploy, reload, and monitor HAProxy (Kubernetes, Docker, or process mode)
+- **Context switching** — switch kubectl contexts at runtime for multi-cluster management
+- **Setup wizard** — interactive `npm run setup` creates `.env`, directories, copies example values, and checks CLI prerequisites
+- **Bootstrap preflight** — on startup, the frontend shows a checklist of missing prerequisites
+- **Interactive API docs** — Swagger UI at `/api/docs` for exploring and testing all endpoints
 
 ## Architecture
 
 ```
 packages/
-  shared/     ← TypeScript types, constants, validation schemas
-  backend/    ← Express API server (Helm, kubectl, HAProxy, cert management)
-  frontend/   ← React SPA (Vite, Tailwind, React Query)
+  shared/     <- TypeScript types, constants, validation schemas
+  backend/    <- Express API server (Helm, kubectl, HAProxy, cert management)
+  frontend/   <- React SPA (Vite, Tailwind, React Query)
 ```
+
+**Tech stack:** TypeScript, Express, React, Vite, Tailwind CSS, React Hook Form, TanStack React Query, Zod, Pino, Sonner toasts, Lucide icons.
+
+## Service Catalog
+
+The platform manages 12 services deployed in dependency order:
+
+| # | Service | Description | Namespace | Optional |
+|---|---------|-------------|-----------|----------|
+| 1 | **base** | Traefik ingress controller, TLS, and namespaces | default | No |
+| 2 | **haproxy** | Reverse proxy and load balancer | skaha-system | No |
+| 3 | **reg** | IVOA Registry service (nginx) | skaha-system | No |
+| 4 | **volumes** | PersistentVolume + PVC resources | skaha-system | No |
+| 5 | **posix-mapper-db** | Standalone PostgreSQL for posix-mapper | skaha-system | No |
+| 6 | **posix-mapper** | UID/GID mapping service with PostgreSQL | skaha-system | No |
+| 7 | **mock-ac** | Mock access-control service for development | skaha-system | Yes |
+| 8 | **skaha** | Session management service with Redis | skaha-system | No |
+| 9 | **cavern** | VOSpace storage service with PostgreSQL UWS | skaha-system | No |
+| 10 | **science-portal** | Web UI for launching sessions (OIDC + Redis) | skaha-system | No |
+| 11 | **storage-ui** | Storage browser with OIDC and Redis | skaha-system | No |
+| 12 | **doi** | DOI minting service | skaha-system | Yes |
+
+### Dependency Graph
+
+```
+base (Traefik, namespaces)
+  ├─> haproxy (reverse proxy)
+  ├─> reg (IVOA Registry - nginx)
+  │     └─> posix-mapper-db (PostgreSQL)
+  │           └─> posix-mapper (UID/GID + PostgreSQL)
+  │                 ├─> skaha (Sessions + Redis)
+  │                 │     └─> science-portal (Web UI + Redis + OIDC)
+  │                 └─> cavern (VOSpace + PostgreSQL)
+  │                       ├─> storage-ui (Storage browser + Redis + OIDC)
+  │                       └─> doi (optional, DOI minting)
+  ├─> volumes (PV + PVC)
+  └─> mock-ac (optional, dev access-control)
+```
+
+### Deploy Order
+
+base -> haproxy -> reg -> volumes -> posix-mapper-db -> posix-mapper -> mock-ac -> skaha -> cavern -> science-portal -> storage-ui -> doi
 
 ## Prerequisites
 
@@ -25,15 +93,14 @@ packages/
 # Install dependencies
 npm install
 
-# Copy and edit environment config
-cp .env.example .env
-
-# Place your Helm values files in ./helm-values/
-# Place your local charts in ./charts/
+# Run interactive setup (creates .env, directories, copies example values, checks CLIs)
+npm run setup
 
 # Start development servers (backend + frontend)
 npm run dev
 ```
+
+If you prefer manual setup, copy `.env.example` to `.env`, create `helm-values/`, `haproxy/`, and `charts/` directories, and place your Helm values YAML files in `helm-values/`. When you start the app without prerequisites, the frontend will show a setup checklist indicating what's missing.
 
 The frontend dev server runs on `http://localhost:5173` and proxies `/api` to the backend on port 3001.
 
@@ -53,16 +120,10 @@ The frontend dev server runs on `http://localhost:5173` and proxies `/api` to th
 | `KUBECONFIG` | _(empty)_ | Path to kubeconfig file (optional) |
 | `CORS_ORIGINS` | `*` (dev) | Comma-separated allowed CORS origins |
 
-## Docker
-
-```bash
-docker compose build
-docker compose up
-```
-
 ## Scripts
 
 ```bash
+npm run setup         # Interactive setup wizard (env, dirs, values, CLI checks)
 npm run dev           # Start backend + frontend in dev mode
 npm run build         # Build all packages
 npm run typecheck     # Type-check all packages
@@ -70,6 +131,23 @@ npm run lint          # Lint all packages
 npm run format        # Format code with Prettier
 ```
 
+## API Documentation
+
+Interactive API docs are available at **`/api/docs`** (Swagger UI) when the backend is running. All 40 endpoints are documented across 6 tags: Health, Services, Deployment, Kubernetes, Certificates, and HAProxy.
+
+## Docker
+
+```bash
+docker compose build
+docker compose up
+```
+
+## Related Projects
+
+- [opencadc/deployments](https://github.com/opencadc/deployments) — Helm charts and CI/CD for CADC services
+- [opencadc/science-platform](https://github.com/opencadc/science-platform) — Science Platform infrastructure
+- [opencadc/science-portal](https://github.com/opencadc/science-portal) — CANFAR Science Portal UI
+
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE).

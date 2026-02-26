@@ -1,17 +1,45 @@
-import { useState } from 'react';
-import { Play, Loader2 } from 'lucide-react';
-import type { ServiceId } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS, getDeploymentOrder } from '@skaha-orc/shared';
+import { useState, useMemo } from 'react';
+import { Play, Loader2, AlertTriangle } from 'lucide-react';
+import type { ServiceId, DeploymentProfileId } from '@skaha-orc/shared';
+import {
+  SERVICE_CATALOG,
+  SERVICE_IDS,
+  DEPLOYMENT_PROFILES,
+  TIER_ORDER,
+  TIER_LABELS,
+  getDeploymentOrder,
+  getServicesByTier,
+} from '@skaha-orc/shared';
 import { useDeployAll } from '@/hooks/use-deploy';
 import { DeployProgress } from './DeployProgress';
 import { LogStream } from './LogStream';
 
+function setsEqual(a: Set<ServiceId>, b: Set<ServiceId>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) {
+    if (!b.has(v)) return false;
+  }
+  return true;
+}
+
 export function DeployWizard() {
+  const standardProfile = DEPLOYMENT_PROFILES.find((p) => p.id === 'standard')!;
   const [selected, setSelected] = useState<Set<ServiceId>>(
-    new Set(SERVICE_IDS.filter((id) => !SERVICE_CATALOG[id].optional)),
+    new Set(standardProfile.serviceIds),
   );
   const [dryRun, setDryRun] = useState(false);
   const deployAll = useDeployAll();
+
+  const servicesByTier = useMemo(() => getServicesByTier(), []);
+
+  const activeProfile = useMemo((): DeploymentProfileId | 'custom' => {
+    for (const profile of DEPLOYMENT_PROFILES) {
+      if (setsEqual(selected, new Set(profile.serviceIds))) {
+        return profile.id;
+      }
+    }
+    return 'custom';
+  }, [selected]);
 
   const order = getDeploymentOrder([...selected]);
 
@@ -25,6 +53,11 @@ export function DeployWizard() {
     setSelected(next);
   };
 
+  const selectProfile = (profileId: DeploymentProfileId) => {
+    const profile = DEPLOYMENT_PROFILES.find((p) => p.id === profileId);
+    if (profile) setSelected(new Set(profile.serviceIds));
+  };
+
   const handleStart = () => {
     deployAll.mutate({ serviceIds: [...selected], dryRun });
   };
@@ -35,28 +68,65 @@ export function DeployWizard() {
     <div className="grid grid-cols-3 gap-6 h-full">
       {/* Left: Controls + Stepper */}
       <div className="space-y-6">
-        {/* Service selection */}
+        {/* Profile selector */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Deployment Profile</h3>
+          <div className="flex gap-2 flex-wrap">
+            {DEPLOYMENT_PROFILES.map((profile) => (
+              <button
+                key={profile.id}
+                disabled={isRunning}
+                onClick={() => selectProfile(profile.id)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeProfile === profile.id
+                    ? 'bg-congress-blue text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                } disabled:opacity-50`}
+                title={profile.description}
+              >
+                {profile.name}
+              </button>
+            ))}
+            <span
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${
+                activeProfile === 'custom'
+                  ? 'bg-buttercup-yellow text-white'
+                  : 'bg-gray-50 text-gray-400'
+              }`}
+            >
+              Custom
+            </span>
+          </div>
+        </div>
+
+        {/* Tier-grouped service selection */}
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Select Services</h3>
-          <div className="space-y-2">
-            {SERVICE_IDS.map((id) => {
-              const def = SERVICE_CATALOG[id];
-              return (
-                <label key={id} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(id)}
-                    onChange={() => toggle(id)}
-                    disabled={isRunning}
-                    className="rounded border-gray-300 text-congress-blue focus:ring-congress-blue"
-                  />
-                  <span className={def.optional ? 'text-neutral-gray' : ''}>
-                    {def.name}
-                    {def.optional && ' (optional)'}
-                  </span>
-                </label>
-              );
-            })}
+          <div className="space-y-4">
+            {TIER_ORDER.map((tier) => (
+              <div key={tier}>
+                <p className="text-xs font-semibold text-neutral-gray uppercase tracking-wider mb-2">
+                  {TIER_LABELS[tier]}
+                </p>
+                <div className="space-y-1.5 pl-1">
+                  {servicesByTier[tier].map((id) => {
+                    const def = SERVICE_CATALOG[id];
+                    return (
+                      <label key={id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(id)}
+                          onChange={() => toggle(id)}
+                          disabled={isRunning}
+                          className="rounded border-gray-300 text-congress-blue focus:ring-congress-blue"
+                        />
+                        <span>{def.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -73,6 +143,14 @@ export function DeployWizard() {
             Dry run (simulate only)
           </label>
         </div>
+
+        {/* Mutual exclusion warning */}
+        {selected.has('dex') && selected.has('keycloak') && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-buttercup-yellow rounded-md p-3 text-sm text-amber-800">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>Both Dex and Keycloak are selected. Typically you only need one identity provider. Use Dex for dev/demo or Keycloak for production.</span>
+          </div>
+        )}
 
         {/* Start button */}
         <button

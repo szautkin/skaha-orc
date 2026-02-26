@@ -1,22 +1,51 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Square, RotateCcw, Loader2 } from 'lucide-react';
-import { SERVICE_IDS } from '@skaha-orc/shared';
+import { Play, Pause, Square, RotateCcw, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { SERVICE_IDS, SERVICE_CATALOG, TIER_ORDER, TIER_LABELS, getServicesByTier } from '@skaha-orc/shared';
+import type { ServiceTier } from '@skaha-orc/shared';
 import { useStopAll, usePauseAll, useResumeAll } from '@/hooks/use-services';
 import { useServicesLive } from '@/hooks/use-services-live';
+import { usePreflight } from '@/hooks/use-preflight';
 import { HostIpWidget } from '@/components/dashboard/HostIpWidget';
 import { DependencyGraph } from '@/components/graph/DependencyGraph';
 import { ServiceCard } from '@/components/service/ServiceCard';
+import { SetupWizard } from '@/components/setup/SetupWizard';
 import { toast } from 'sonner';
+
+const servicesByTier = getServicesByTier();
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const { data: services, isLoading, error } = useServicesLive();
+  const preflight = usePreflight();
+  const [dismissed, setDismissed] = useState(
+    () => sessionStorage.getItem('setup-dismissed') === 'true',
+  );
+  const [collapsed, setCollapsed] = useState<Record<ServiceTier, boolean>>({
+    core: false,
+    recommended: false,
+    site: true,
+  });
   const stopAll = useStopAll();
   const pauseAll = usePauseAll();
   const resumeAll = useResumeAll();
 
   const allIds = [...SERVICE_IDS];
   const anyBusy = stopAll.isPending || pauseAll.isPending || resumeAll.isPending;
+
+  if (preflight.data && !preflight.data.ready && !dismissed) {
+    return (
+      <SetupWizard
+        result={preflight.data}
+        onDismiss={() => {
+          setDismissed(true);
+          sessionStorage.setItem('setup-dismissed', 'true');
+        }}
+        onRecheck={() => void preflight.refetch()}
+        isRechecking={preflight.isFetching}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -38,6 +67,11 @@ export function DashboardPage() {
   }
 
   const svcList = services ?? [];
+  const svcMap = new Map(svcList.map((s) => [s.id, s]));
+
+  const toggleTier = (tier: ServiceTier) => {
+    setCollapsed((prev) => ({ ...prev, [tier]: !prev[tier] }));
+  };
 
   return (
     <div className="h-full flex flex-col gap-6">
@@ -119,10 +153,35 @@ export function DashboardPage() {
           <DependencyGraph services={svcList} />
         </div>
 
-        <div className="col-span-2 grid grid-cols-2 gap-3 auto-rows-min overflow-auto">
-          {svcList.map((service) => (
-            <ServiceCard key={service.id} service={service} />
-          ))}
+        <div className="col-span-2 overflow-auto space-y-4">
+          {TIER_ORDER.map((tier) => {
+            const ids = servicesByTier[tier];
+            const isCollapsed = collapsed[tier];
+            return (
+              <div key={tier}>
+                <button
+                  className="flex items-center gap-1.5 text-xs font-semibold text-neutral-gray uppercase tracking-wider mb-2 hover:text-gray-700"
+                  onClick={() => toggleTier(tier)}
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                  {TIER_LABELS[tier]} ({ids.length})
+                </button>
+                {!isCollapsed && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {ids.map((id) => {
+                      const svc = svcMap.get(id);
+                      if (!svc) return null;
+                      return <ServiceCard key={id} service={svc} />;
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

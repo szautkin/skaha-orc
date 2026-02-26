@@ -6,6 +6,7 @@ import { PHASE_COLORS } from '@skaha-orc/shared';
 interface ServiceNodeData {
   label: string;
   phase: DeploymentPhase;
+  tierColor?: string;
   [key: string]: unknown;
 }
 
@@ -16,7 +17,7 @@ function ServiceNodeComponent({ data }: NodeProps) {
   return (
     <div
       className="bg-white rounded-lg shadow-sm px-4 py-2 border-2 min-w-[120px] text-center"
-      style={{ borderColor }}
+      style={{ borderColor, borderLeftColor: nodeData.tierColor ?? borderColor, borderLeftWidth: 4 }}
     >
       <Handle type="target" position={Position.Top} className="!bg-neutral-gray !w-2 !h-2" />
       <p className="text-sm font-medium">{nodeData.label}</p>

@@ -1,3 +1,5 @@
+export type ServiceTier = 'core' | 'recommended' | 'site';
+
 export const SERVICE_IDS = [
   'base',
   'haproxy',
@@ -10,7 +12,8 @@ export const SERVICE_IDS = [
   'science-portal',
   'storage-ui',
   'doi',
-  'mock-ac',
+  'dex',
+  'keycloak',
 ] as const;
 
 export type ServiceId = (typeof SERVICE_IDS)[number];
@@ -29,7 +32,7 @@ export interface ServiceDefinition {
   dependencies: ServiceId[];
   chartSource: ChartSource;
   valuesFile: string | null;
-  optional: boolean;
+  tier: ServiceTier;
   endpointPath: string | null;
   k8sServiceName: string | null;
   k8sServicePort: number | null;
@@ -79,4 +82,18 @@ export interface VolumeMount {
 export interface Volume {
   name: string;
   secret?: { defaultMode: number; secretName: string };
+}
+
+export interface OidcClientConfig {
+  clientID: string;
+  clientSecret: string;
+  redirectURI: string;
+  callbackURI: string;
+  scope: string;
+}
+
+export interface PlatformOidcSettings {
+  issuerUri: string;
+  sciencePortal: OidcClientConfig;
+  storageUi: OidcClientConfig;
 }

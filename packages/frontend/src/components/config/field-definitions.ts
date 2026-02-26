@@ -474,6 +474,91 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
     },
     extraHostsSection,
   ],
+  keycloak: [
+    {
+      title: 'Admin',
+      fields: [
+        { name: 'adminUser', label: 'Admin Username', type: 'text', path: 'auth.adminUser' },
+        {
+          name: 'adminPassword',
+          label: 'Admin Password',
+          type: 'password',
+          path: 'auth.adminPassword',
+        },
+      ],
+    },
+    {
+      title: 'Server',
+      fields: [
+        { name: 'replicas', label: 'Replicas', type: 'number', path: 'replicas' },
+        { name: 'proxy', label: 'Proxy Mode', type: 'select', path: 'proxy', options: ['edge', 'reencrypt', 'passthrough'] },
+        {
+          name: 'httpRelativePath',
+          label: 'HTTP Relative Path',
+          type: 'text',
+          path: 'httpRelativePath',
+        },
+      ],
+    },
+    {
+      title: 'PostgreSQL',
+      fields: [
+        {
+          name: 'pgEnabled',
+          label: 'Enable Built-in PostgreSQL',
+          type: 'boolean',
+          path: 'postgresql.enabled',
+        },
+      ],
+    },
+    {
+      title: 'Resources',
+      fields: [
+        { name: 'reqMem', label: 'Memory Request', type: 'text', path: 'resources.requests.memory' },
+        { name: 'reqCpu', label: 'CPU Request', type: 'text', path: 'resources.requests.cpu' },
+        { name: 'limMem', label: 'Memory Limit', type: 'text', path: 'resources.limits.memory' },
+        { name: 'limCpu', label: 'CPU Limit', type: 'text', path: 'resources.limits.cpu' },
+      ],
+    },
+  ],
+  dex: [
+    {
+      title: 'Issuer',
+      fields: [
+        { name: 'issuer', label: 'Issuer URI', type: 'text', path: 'issuer' },
+      ],
+    },
+    {
+      title: 'Web Server',
+      fields: [
+        { name: 'webHttp', label: 'HTTP Bind Address', type: 'text', path: 'web.http' },
+      ],
+    },
+    {
+      title: 'Storage',
+      fields: [
+        {
+          name: 'storageType',
+          label: 'Storage Type',
+          type: 'select',
+          path: 'storage.type',
+          options: ['sqlite3', 'postgres', 'mysql', 'memory'],
+        },
+        { name: 'storageFile', label: 'DB File Path', type: 'text', path: 'storage.config.file' },
+      ],
+    },
+    {
+      title: 'Options',
+      fields: [
+        {
+          name: 'enablePasswordDB',
+          label: 'Enable Password DB',
+          type: 'boolean',
+          path: 'enablePasswordDB',
+        },
+      ],
+    },
+  ],
   doi: [
     {
       title: 'Identity',

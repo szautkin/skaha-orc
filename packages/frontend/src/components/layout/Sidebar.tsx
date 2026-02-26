@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Server, Play, Network } from 'lucide-react';
+import { LayoutDashboard, Server, Play, Network, KeyRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SERVICE_CATALOG, SERVICE_IDS } from '@skaha-orc/shared';
 
@@ -77,6 +77,21 @@ export function Sidebar() {
         >
           <Network className="w-3.5 h-3.5" />
           HAProxy
+        </NavLink>
+
+        <NavLink
+          to="/settings/oidc"
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors',
+              isActive
+                ? 'bg-light-blue text-congress-blue font-medium'
+                : 'text-neutral-gray hover:bg-gray-100 hover:text-gray-900',
+            )
+          }
+        >
+          <KeyRound className="w-3.5 h-3.5" />
+          OIDC Settings
         </NavLink>
       </nav>
     </aside>

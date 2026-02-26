@@ -1,0 +1,30 @@
+replicas: 1
+
+auth:
+  adminUser: admin
+  adminPassword: admin
+
+postgresql:
+  enabled: true
+
+proxy: edge
+httpRelativePath: /auth/
+
+extraEnvVars:
+  - name: KC_HOSTNAME_STRICT
+    value: "false"
+  - name: KC_PROXY_HEADERS
+    value: xforwarded
+
+service:
+  type: ClusterIP
+  ports:
+    http: 8080
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+    cpu: "1"

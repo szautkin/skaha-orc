@@ -37,3 +37,16 @@ export interface DeployRequest {
 export interface ConfigUpdateRequest {
   config: Record<string, unknown>;
 }
+
+export interface PreflightCheck {
+  id: string;
+  label: string;
+  status: 'ok' | 'warn' | 'fail';
+  message: string;
+  remedy?: string;
+}
+
+export interface PreflightResult {
+  ready: boolean;
+  checks: PreflightCheck[];
+}

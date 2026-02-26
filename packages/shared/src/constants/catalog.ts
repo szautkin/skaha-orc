@@ -1,6 +1,14 @@
-import type { ServiceDefinition, ServiceId } from '../types/services.js';
+import type { ServiceDefinition, ServiceId, ServiceTier } from '../types/services.js';
 
 export const PLATFORM_HOSTNAME = 'haproxy.cadc.dao.nrc.ca';
+
+export const TIER_ORDER: ServiceTier[] = ['core', 'recommended', 'site'];
+
+export const TIER_LABELS: Record<ServiceTier, string> = {
+  core: 'Core Infrastructure',
+  recommended: 'Recommended Services',
+  site: 'Site-Specific',
+};
 
 export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
   base: {
@@ -11,7 +19,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: [],
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'base' },
     valuesFile: 'base-values.yaml',
-    optional: false,
+    tier: 'core',
     endpointPath: null,
     k8sServiceName: null,
     k8sServicePort: null,
@@ -24,7 +32,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['base'],
     chartSource: { type: 'haproxy' },
     valuesFile: null,
-    optional: false,
+    tier: 'site',
     endpointPath: null,
     k8sServiceName: 'haproxy',
     k8sServicePort: 443,
@@ -37,7 +45,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['base'],
     chartSource: { type: 'local', path: 'charts/reg' },
     valuesFile: null,
-    optional: false,
+    tier: 'core',
     endpointPath: '/reg',
     k8sServiceName: 'reg-nginx-svc',
     k8sServicePort: 80,
@@ -50,7 +58,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['base'],
     chartSource: { type: 'kubectl', path: 'volumes.yaml' },
     valuesFile: 'volumes.yaml',
-    optional: false,
+    tier: 'core',
     endpointPath: null,
     k8sServiceName: null,
     k8sServicePort: null,
@@ -63,7 +71,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['volumes'],
     chartSource: { type: 'kubectl', path: 'posix-mapper-postgres.yaml' },
     valuesFile: 'posix-mapper-postgres.yaml',
-    optional: false,
+    tier: 'core',
     endpointPath: null,
     k8sServiceName: 'posix-mapper-postgres',
     k8sServicePort: 5432,
@@ -76,7 +84,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['reg', 'posix-mapper-db'],
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'posixmapper' },
     valuesFile: 'posix-mapper-values.yaml',
-    optional: false,
+    tier: 'core',
     endpointPath: '/posix-mapper',
     k8sServiceName: 'posix-mapper-tomcat-svc',
     k8sServicePort: 8080,
@@ -89,7 +97,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['posix-mapper'],
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'skaha' },
     valuesFile: 'skaha-values.yaml',
-    optional: false,
+    tier: 'core',
     endpointPath: '/skaha',
     k8sServiceName: 'skaha-tomcat-svc',
     k8sServicePort: 8080,
@@ -105,7 +113,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
       path: 'charts/cavern',
     },
     valuesFile: 'cavern-values.yaml',
-    optional: false,
+    tier: 'recommended',
     endpointPath: '/cavern',
     k8sServiceName: 'cavern-tomcat-svc',
     k8sServicePort: 8080,
@@ -121,7 +129,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
       path: 'charts/science-portal',
     },
     valuesFile: 'science-portal-values.yaml',
-    optional: false,
+    tier: 'recommended',
     endpointPath: '/science-portal',
     k8sServiceName: 'science-portal-tomcat-svc',
     k8sServicePort: 8080,
@@ -134,7 +142,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['cavern'],
     chartSource: { type: 'repo', repo: 'science-platform-client', chart: 'storageui' },
     valuesFile: 'storage.yaml',
-    optional: false,
+    tier: 'recommended',
     endpointPath: '/storage',
     k8sServiceName: 'storage-ui-tomcat-svc',
     k8sServicePort: 8080,
@@ -142,7 +150,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
   doi: {
     id: 'doi',
     name: 'DOI',
-    description: 'DOI minting service (optional)',
+    description: 'DOI minting service',
     namespace: 'skaha-system',
     dependencies: ['cavern'],
     chartSource: {
@@ -150,28 +158,101 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
       path: 'charts/doi',
     },
     valuesFile: 'doi-values.yaml',
-    optional: true,
+    tier: 'site',
     endpointPath: '/doi',
     k8sServiceName: 'doi-tomcat',
     k8sServicePort: 80,
   },
-  'mock-ac': {
-    id: 'mock-ac',
-    name: 'Mock AC',
-    description: 'Mock access-control service for development',
+  dex: {
+    id: 'dex',
+    name: 'Dex',
+    description: 'Lightweight OIDC provider with static passwords (dev/demo)',
     namespace: 'skaha-system',
     dependencies: ['base'],
     chartSource: {
       type: 'local',
-      path: 'charts/mock-ac',
+      path: 'charts/dex',
     },
-    valuesFile: null,
-    optional: true,
-    endpointPath: '/ac',
-    k8sServiceName: 'mock-ac',
+    valuesFile: 'dex-values.yaml',
+    tier: 'site',
+    endpointPath: '/dex',
+    k8sServiceName: 'dex',
+    k8sServicePort: 5556,
+  },
+  keycloak: {
+    id: 'keycloak',
+    name: 'Keycloak',
+    description: 'Full-featured OIDC identity provider with admin console',
+    namespace: 'skaha-system',
+    dependencies: ['base'],
+    chartSource: {
+      type: 'repo',
+      repo: 'bitnami',
+      chart: 'keycloak',
+    },
+    valuesFile: 'keycloak-values.yaml',
+    tier: 'site',
+    endpointPath: '/auth',
+    k8sServiceName: 'keycloak',
     k8sServicePort: 8080,
   },
 };
+
+export type DeploymentProfileId = 'standard' | 'production' | 'minimal' | 'full';
+
+export interface DeploymentProfile {
+  id: DeploymentProfileId;
+  name: string;
+  description: string;
+  serviceIds: ServiceId[];
+}
+
+const coreAndRecommended = Object.values(SERVICE_CATALOG)
+  .filter((s) => s.tier === 'core' || s.tier === 'recommended')
+  .map((s) => s.id);
+
+export const DEPLOYMENT_PROFILES: DeploymentProfile[] = [
+  {
+    id: 'standard',
+    name: 'Dev / Demo',
+    description: 'Core + recommended + HAProxy + Dex (static passwords, zero setup)',
+    serviceIds: [...coreAndRecommended, 'haproxy', 'dex'] as ServiceId[],
+  },
+  {
+    id: 'production',
+    name: 'Production',
+    description: 'Core + recommended + HAProxy + Keycloak (full IdP with admin console)',
+    serviceIds: [...coreAndRecommended, 'haproxy', 'keycloak'] as ServiceId[],
+  },
+  {
+    id: 'minimal',
+    name: 'Minimal',
+    description: 'Core infrastructure only',
+    serviceIds: Object.values(SERVICE_CATALOG)
+      .filter((s) => s.tier === 'core')
+      .map((s) => s.id) as ServiceId[],
+  },
+  {
+    id: 'full',
+    name: 'Full',
+    description: 'All services (includes both Dex and Keycloak)',
+    serviceIds: [...Object.keys(SERVICE_CATALOG)] as ServiceId[],
+  },
+];
+
+export function getServicesByTier(): Record<ServiceTier, ServiceId[]> {
+  const result: Record<ServiceTier, ServiceId[]> = {
+    core: [],
+    recommended: [],
+    site: [],
+  };
+
+  for (const def of Object.values(SERVICE_CATALOG)) {
+    result[def.tier].push(def.id);
+  }
+
+  return result;
+}
 
 /** Topological sort using Kahn's algorithm. Returns deploy order. */
 export function getDeploymentOrder(

@@ -12,7 +12,7 @@ import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { useNavigate } from 'react-router-dom';
 import type { ServiceWithStatus, ServiceId } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, SERVICE_IDS, TIER_COLORS } from '@skaha-orc/shared';
 import { ServiceNode } from './ServiceNode';
 
 const nodeTypes = { serviceNode: ServiceNode };
@@ -64,6 +64,7 @@ export function DependencyGraph({ services }: DependencyGraphProps) {
         data: {
           label: def.name,
           phase: svc?.status.phase ?? 'not_installed',
+          tierColor: TIER_COLORS[def.tier],
         },
       };
     });

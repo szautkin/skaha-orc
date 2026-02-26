@@ -1,4 +1,5 @@
 import type { DeploymentPhase } from '../types/deployment.js';
+import type { ServiceTier } from '../types/services.js';
 
 export const UVIC_COLORS = {
   congressBlue: '#005493',
@@ -20,6 +21,12 @@ export const PHASE_COLORS: Record<DeploymentPhase, string> = {
   paused: UVIC_COLORS.congressBlue,
   failed: UVIC_COLORS.tallPoppyRed,
   uninstalling: UVIC_COLORS.buttercupYellow,
+};
+
+export const TIER_COLORS: Record<ServiceTier, string> = {
+  core: UVIC_COLORS.congressBlue,
+  recommended: UVIC_COLORS.successGreen,
+  site: UVIC_COLORS.neutralGray,
 };
 
 export const PHASE_LABELS: Record<DeploymentPhase, string> = {

@@ -7,6 +7,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ServicePage } from '@/pages/ServicePage';
 import { DeployPage } from '@/pages/DeployPage';
 import { HAProxyPage } from '@/pages/HAProxyPage';
+import { OidcSettingsPage } from '@/pages/OidcSettingsPage';
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -62,6 +63,7 @@ export default function App() {
               <Route path="/services/:id" element={<ServicePage />} />
               <Route path="/deploy" element={<DeployPage />} />
               <Route path="/haproxy" element={<HAProxyPage />} />
+              <Route path="/settings/oidc" element={<OidcSettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

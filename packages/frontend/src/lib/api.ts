@@ -6,6 +6,8 @@ import type {
   GenerateCertRequest,
   GenerateCaRequest,
   UploadCaRequest,
+  PreflightResult,
+  PlatformOidcSettings,
 } from '@skaha-orc/shared';
 
 const BASE = '/api';
@@ -30,6 +32,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getPreflight: () => request<PreflightResult>('/health/preflight'),
+
   getServices: () => request<ServiceWithStatus[]>('/services'),
 
   getService: (id: string) => request<ServiceWithStatus>(`/services/${id}`),
@@ -123,6 +127,23 @@ export const api = {
     request<{ context: string }>('/kubernetes/context', {
       method: 'PUT',
       body: JSON.stringify({ context }),
+    }),
+
+  getOidcSettings: () => request<PlatformOidcSettings>('/oidc/settings'),
+
+  saveOidcSettings: (settings: PlatformOidcSettings) =>
+    request<{ updated: number }>('/oidc/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+
+  getDexUsers: () =>
+    request<Array<{ email: string; username: string; userID: string; hash: string }>>('/dex/users'),
+
+  saveDexUsers: (users: Array<{ email: string; username: string; userID: string; hash: string }>) =>
+    request<{ message: string }>('/dex/users', {
+      method: 'PUT',
+      body: JSON.stringify({ users }),
     }),
 };
 
