@@ -1,0 +1,22 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    ports:
+      - "3001:3001"
+    env_file: .env
+    volumes:
+      - ./helm-values:/app/helm-values
+      - ./charts:/app/charts
+      - ./haproxy:/app/haproxy
+      - ~/.kube:/root/.kube:ro
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend

@@ -1,5 +1,5 @@
 import { execFile } from 'child_process';
-import { readFile, writeFile, access, mkdir } from 'fs/promises';
+import { readFile, writeFile, access, mkdir, unlink } from 'fs/promises';
 import { resolve } from 'path';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
@@ -37,7 +37,7 @@ interface ParsedCert {
 async function parsePem(pemContent: string): Promise<ParsedCert> {
   const tmpFile = resolve(tmpdir(), `cert-${randomUUID()}.pem`);
   try {
-    await writeFile(tmpFile, pemContent, 'utf-8');
+    await writeFile(tmpFile, pemContent, { encoding: 'utf-8', mode: 0o600 });
     const { stdout } = await execFileAsync('openssl', [
       'x509',
       '-noout',
@@ -59,7 +59,7 @@ async function parsePem(pemContent: string): Promise<ParsedCert> {
       notAfter: get('notAfter='),
     };
   } finally {
-    await writeFile(tmpFile, '', 'utf-8').catch(() => {});
+    await unlink(tmpFile).catch(() => {});
   }
 }
 
@@ -164,14 +164,14 @@ export async function uploadCA(certPem: string, keyPem: string): Promise<CaInfo>
   // Validate the cert
   const tmpCert = resolve(tmpdir(), `ca-validate-${randomUUID()}.pem`);
   try {
-    await writeFile(tmpCert, certPem, 'utf-8');
+    await writeFile(tmpCert, certPem, { encoding: 'utf-8', mode: 0o600 });
     await execFileAsync('openssl', ['x509', '-noout', '-in', tmpCert]);
   } finally {
-    await writeFile(tmpCert, '', 'utf-8').catch(() => {});
+    await unlink(tmpCert).catch(() => {});
   }
 
-  await writeFile(CA_CERT_PATH, certPem, 'utf-8');
-  await writeFile(CA_KEY_PATH, keyPem, 'utf-8');
+  await writeFile(CA_CERT_PATH, certPem, { encoding: 'utf-8', mode: 0o600 });
+  await writeFile(CA_KEY_PATH, keyPem, { encoding: 'utf-8', mode: 0o600 });
 
   logger.info('Uploaded CA cert and key');
   return getCaInfo();
@@ -235,9 +235,8 @@ export async function generateSignedCert(opts: {
     logger.info({ cn: opts.cn, days: opts.days }, 'Generated signed certificate');
     return { certPem, keyPem };
   } finally {
-    // Cleanup temp files
     for (const f of [keyPath, csrPath, certPath]) {
-      await writeFile(f, '', 'utf-8').catch(() => {});
+      await unlink(f).catch(() => {});
     }
   }
 }
@@ -274,7 +273,7 @@ export async function generateHAProxyCert(opts: {
   const combinedPem = `${certPem}\n${keyPem}`;
 
   await mkdir(DEV_CONFIG_DIR, { recursive: true });
-  await writeFile(HAPROXY_CERT_PATH, combinedPem, 'utf-8');
+  await writeFile(HAPROXY_CERT_PATH, combinedPem, { encoding: 'utf-8', mode: 0o600 });
 
   logger.info({ cn: opts.cn, days: opts.days }, 'Generated HAProxy server cert');
   return getHAProxyCertInfo();

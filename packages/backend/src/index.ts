@@ -12,7 +12,12 @@ import haproxyRoutes from './routes/haproxy.js';
 
 const app = express();
 
-app.use(cors());
+const corsOrigins = process.env.CORS_ORIGINS;
+if (corsOrigins) {
+  app.use(cors({ origin: corsOrigins.split(',').map((o) => o.trim()) }));
+} else {
+  app.use(cors());
+}
 app.use(express.json({ limit: '1mb' }));
 
 // Routes

@@ -35,7 +35,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'IVOA Registry service (nginx)',
     namespace: 'skaha-system',
     dependencies: ['base'],
-    chartSource: { type: 'local', path: '/Users/szautkin/reviews/helm_assets/reg' },
+    chartSource: { type: 'local', path: 'charts/reg' },
     valuesFile: null,
     optional: false,
     endpointPath: '/reg',
@@ -102,7 +102,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['posix-mapper'],
     chartSource: {
       type: 'local',
-      path: '/Users/szautkin/reviews/hfix/science-platform/deployment/helm/cavern',
+      path: 'charts/cavern',
     },
     valuesFile: 'cavern-values.yaml',
     optional: false,
@@ -118,7 +118,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['skaha'],
     chartSource: {
       type: 'local',
-      path: '/Users/szautkin/reviews/hfix/science-platform/deployment/helm/science-portal',
+      path: 'charts/science-portal',
     },
     valuesFile: 'science-portal-values.yaml',
     optional: false,
@@ -147,7 +147,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['cavern'],
     chartSource: {
       type: 'local',
-      path: '/Users/szautkin/reviews/skaha-orc/charts/doi',
+      path: 'charts/doi',
     },
     valuesFile: 'doi-values.yaml',
     optional: true,
@@ -163,7 +163,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['base'],
     chartSource: {
       type: 'local',
-      path: '/Users/szautkin/reviews/skaha-orc/charts/mock-ac',
+      path: 'charts/mock-ac',
     },
     valuesFile: null,
     optional: true,

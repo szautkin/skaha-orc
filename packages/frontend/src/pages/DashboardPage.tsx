@@ -57,12 +57,13 @@ export function DashboardPage() {
           <button
             className="flex items-center gap-1.5 border border-buttercup-yellow text-buttercup-yellow px-3 py-1.5 rounded-md text-sm font-medium hover:bg-amber-50 transition-colors disabled:opacity-50"
             disabled={anyBusy}
-            onClick={() =>
+            onClick={() => {
+              if (!confirm('Pause all services? This will scale all deployments to 0 replicas.')) return;
               pauseAll.mutate(allIds, {
                 onSuccess: () => toast.success('All services paused'),
                 onError: (err) => toast.error(`Pause failed: ${err.message}`),
-              })
-            }
+              });
+            }}
           >
             {pauseAll.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -93,12 +94,13 @@ export function DashboardPage() {
           <button
             className="flex items-center gap-1.5 border border-tall-poppy-red text-tall-poppy-red px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
             disabled={anyBusy}
-            onClick={() =>
+            onClick={() => {
+              if (!confirm('Stop all services? This will uninstall all Helm releases.')) return;
               stopAll.mutate(allIds, {
                 onSuccess: () => toast.success('All services stopped'),
                 onError: (err) => toast.error(`Stop failed: ${err.message}`),
-              })
-            }
+              });
+            }}
           >
             {stopAll.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />

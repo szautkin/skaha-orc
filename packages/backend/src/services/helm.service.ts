@@ -1,9 +1,11 @@
+import { resolve } from 'path';
 import { execa } from 'execa';
 import type { DeploymentPhase, ServiceId } from '@skaha-orc/shared';
 import { SERVICE_CATALOG } from '@skaha-orc/shared';
 import { config, valuesFilePath } from '../config.js';
 import { eventBus } from '../sse/event-bus.js';
 import { logger } from '../logger.js';
+import { kubeArgs, kubeEnv, helmContextArgs } from './kube-args.js';
 import { waitForHealthy } from './health.service.js';
 import { isHAProxyRunning, isHAProxyPaused, deployHAProxy, stopHAProxy, detectDeployMode } from './haproxy.service.js';
 
@@ -19,7 +21,7 @@ interface HelmRelease {
 
 export async function helmList(): Promise<HelmRelease[]> {
   try {
-    const { stdout } = await execa(config.helmBinary, ['list', '--all-namespaces', '-o', 'json']);
+    const { stdout } = await execa(config.helmBinary, [...helmContextArgs(), 'list', '--all-namespaces', '-o', 'json'], { env: { ...process.env, ...kubeEnv() } });
     return JSON.parse(stdout) as HelmRelease[];
   } catch {
     return [];
@@ -29,13 +31,14 @@ export async function helmList(): Promise<HelmRelease[]> {
 export async function helmStatus(releaseName: string, namespace: string): Promise<string | null> {
   try {
     const { stdout } = await execa(config.helmBinary, [
+      ...helmContextArgs(),
       'status',
       releaseName,
       '-n',
       namespace,
       '-o',
       'json',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     const parsed = JSON.parse(stdout) as { info?: { status?: string } };
     return parsed.info?.status ?? null;
   } catch {
@@ -47,7 +50,7 @@ function getChartRef(serviceId: ServiceId): string {
   const def = SERVICE_CATALOG[serviceId];
   const src = def.chartSource;
   if (src.type === 'repo') return `${src.repo}/${src.chart}`;
-  if (src.type === 'local') return src.path;
+  if (src.type === 'local') return resolve(config.chartBaseDir, src.path);
   return '';
 }
 
@@ -79,7 +82,7 @@ export async function helmDeploy(
 
   const chartRef = getChartRef(serviceId);
   const releaseName = getReleaseName(serviceId);
-  const args = ['upgrade', '--install', releaseName, chartRef, '-n', def.namespace];
+  const args = [...helmContextArgs(), 'upgrade', '--install', releaseName, chartRef, '-n', def.namespace];
 
   if (def.valuesFile) {
     args.push('--values', valuesFilePath(def.valuesFile));
@@ -104,7 +107,7 @@ export async function helmDeploy(
   });
 
   try {
-    const proc = execa(config.helmBinary, args);
+    const proc = execa(config.helmBinary, args, { env: { ...process.env, ...kubeEnv() } });
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       const msg = chunk.toString().trim();
@@ -173,7 +176,7 @@ async function kubectlApply(
   });
 
   try {
-    const { stdout, stderr } = await execa(config.kubectlBinary, ['apply', '-f', filePath]);
+    const { stdout, stderr } = await execa(config.kubectlBinary, [...kubeArgs(), 'apply', '-f', filePath], { env: { ...process.env, ...kubeEnv() } });
     const output = stdout + '\n' + stderr;
 
     eventBus.broadcast({
@@ -225,11 +228,12 @@ export async function helmUninstall(
 
   try {
     const { stdout, stderr } = await execa(config.helmBinary, [
+      ...helmContextArgs(),
       'uninstall',
       releaseName,
       '-n',
       def.namespace,
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     return { success: true, output: stdout + '\n' + stderr };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -251,10 +255,10 @@ export async function getServicePhase(serviceId: ServiceId): Promise<DeploymentP
       if (mode === 'kubernetes') {
         try {
           const { stdout } = await execa(config.kubectlBinary, [
-            'get', 'pods', '-l', 'app=haproxy',
+            ...kubeArgs(), 'get', 'pods', '-l', 'app=haproxy',
             '-n', def.namespace,
             '-o', 'jsonpath={.items[0].status.containerStatuses[0].state.waiting.reason}',
-          ]);
+          ], { env: { ...process.env, ...kubeEnv() } });
           const reason = stdout.trim();
           if (reason === 'CrashLoopBackOff' || reason === 'Error' || reason === 'ImagePullBackOff') {
             return 'failed';
@@ -272,13 +276,14 @@ export async function getServicePhase(serviceId: ServiceId): Promise<DeploymentP
     // For kubectl resources, check if PVCs exist
     try {
       await execa(config.kubectlBinary, [
+        ...kubeArgs(),
         'get',
         'pvc',
         'skaha-pvc',
         '-n',
         def.namespace,
         '--no-headers',
-      ]);
+      ], { env: { ...process.env, ...kubeEnv() } });
       return 'deployed';
     } catch {
       return 'not_installed';

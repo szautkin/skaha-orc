@@ -131,7 +131,8 @@ router.post('/haproxy/stop', async (req, res) => {
 
 router.get('/haproxy/logs', async (req, res) => {
   const mode = req.query.mode as HAProxyDeployMode | undefined;
-  const tail = req.query.tail ? Number(req.query.tail) : 50;
+  const rawTail = req.query.tail ? Number(req.query.tail) : 50;
+  const tail = Math.min(Math.max(1, rawTail || 50), 10000);
 
   if (!mode || !['kubernetes', 'docker', 'process'].includes(mode)) {
     res.status(400).json({ success: false, error: 'mode query param required (kubernetes|docker|process)' });

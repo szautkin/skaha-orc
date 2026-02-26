@@ -5,6 +5,7 @@ import { SERVICE_IDS, SERVICE_CATALOG } from '@skaha-orc/shared';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { eventBus } from '../sse/event-bus.js';
+import { kubeArgs, kubeEnv } from './kube-args.js';
 import { CA_CERT_PATH, HAPROXY_CERT_PATH } from './cert.service.js';
 
 const { haproxy: haCfg } = config;
@@ -106,7 +107,7 @@ export async function checkDeployPrereqs(mode: HAProxyDeployMode): Promise<HAPro
 
     // Cluster reachable
     try {
-      await execa(config.kubectlBinary, ['cluster-info']);
+      await execa(config.kubectlBinary, [...kubeArgs(), 'cluster-info'], { env: { ...process.env, ...kubeEnv() } });
       checks.push({ id: 'k8s_cluster', label: 'K8s cluster', status: 'ok', message: 'Cluster reachable' });
     } catch {
       checks.push({
@@ -120,7 +121,7 @@ export async function checkDeployPrereqs(mode: HAProxyDeployMode): Promise<HAPro
 
     // Namespace exists (non-blocking)
     try {
-      await execa(config.kubectlBinary, ['get', 'ns', haCfg.k8sNamespace]);
+      await execa(config.kubectlBinary, [...kubeArgs(), 'get', 'ns', haCfg.k8sNamespace], { env: { ...process.env, ...kubeEnv() } });
       checks.push({ id: 'namespace', label: `Namespace ${haCfg.k8sNamespace}`, status: 'ok', message: 'Namespace exists' });
     } catch {
       checks.push({
@@ -190,10 +191,10 @@ export async function detectDeployMode(): Promise<HAProxyDeployMode | null> {
   // Try K8s first
   try {
     const { stdout } = await execa(config.kubectlBinary, [
-      'get', 'deployment', haCfg.k8sDeploymentName,
+      ...kubeArgs(), 'get', 'deployment', haCfg.k8sDeploymentName,
       '-n', haCfg.k8sNamespace,
       '--no-headers',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     if (stdout.trim()) return 'kubernetes';
   } catch { /* not on k8s */ }
 
@@ -219,10 +220,10 @@ export async function isHAProxyRunning(mode: HAProxyDeployMode): Promise<boolean
   try {
     if (mode === 'kubernetes') {
       const { stdout } = await execa(config.kubectlBinary, [
-        'get', 'deployment', haCfg.k8sDeploymentName,
+        ...kubeArgs(), 'get', 'deployment', haCfg.k8sDeploymentName,
         '-n', haCfg.k8sNamespace,
         '-o', 'jsonpath={.status.readyReplicas}',
-      ]);
+      ], { env: { ...process.env, ...kubeEnv() } });
       return Number(stdout) > 0;
     }
     if (mode === 'docker') {
@@ -244,10 +245,10 @@ export async function isHAProxyPaused(mode: HAProxyDeployMode): Promise<boolean>
   if (mode !== 'kubernetes') return false;
   try {
     const { stdout } = await execa(config.kubectlBinary, [
-      'get', 'deployment', haCfg.k8sDeploymentName,
+      ...kubeArgs(), 'get', 'deployment', haCfg.k8sDeploymentName,
       '-n', haCfg.k8sNamespace,
       '-o', 'jsonpath={.spec.replicas}',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     return Number(stdout) === 0;
   } catch {
     return false;
@@ -283,9 +284,9 @@ export async function reloadHAProxy(mode: HAProxyDeployMode): Promise<string> {
 
   if (mode === 'kubernetes') {
     const { stdout } = await execa(config.kubectlBinary, [
-      'rollout', 'restart', `deployment/${haCfg.k8sDeploymentName}`,
+      ...kubeArgs(), 'rollout', 'restart', `deployment/${haCfg.k8sDeploymentName}`,
       '-n', haCfg.k8sNamespace,
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     result = stdout;
   } else if (mode === 'docker') {
     const { stdout } = await execa('docker', [
@@ -347,17 +348,18 @@ async function _deployHAProxy(mode: HAProxyDeployMode): Promise<string> {
     const nsCheck = preflight.checks.find((c) => c.id === 'namespace');
     if (nsCheck && nsCheck.status === 'missing') {
       logger.info({ namespace: haCfg.k8sNamespace }, 'HAProxy deploy: auto-creating namespace');
-      await execa(config.kubectlBinary, ['create', 'namespace', haCfg.k8sNamespace]);
+      const kEnv = { env: { ...process.env, ...kubeEnv() } };
+      await execa(config.kubectlBinary, [...kubeArgs(), 'create', 'namespace', haCfg.k8sNamespace], kEnv);
       await execa(config.kubectlBinary, [
-        'label', 'namespace', haCfg.k8sNamespace,
+        ...kubeArgs(), 'label', 'namespace', haCfg.k8sNamespace,
         'app.kubernetes.io/managed-by=Helm', '--overwrite',
-      ]);
+      ], kEnv);
       await execa(config.kubectlBinary, [
-        'annotate', 'namespace', haCfg.k8sNamespace,
+        ...kubeArgs(), 'annotate', 'namespace', haCfg.k8sNamespace,
         'meta.helm.sh/release-name=base',
         'meta.helm.sh/release-namespace=default',
         '--overwrite',
-      ]);
+      ], kEnv);
       logger.info({ namespace: haCfg.k8sNamespace }, 'HAProxy deploy: namespace created with Helm labels');
     }
 
@@ -373,8 +375,9 @@ async function _deployHAProxy(mode: HAProxyDeployMode): Promise<string> {
       configMapArgs.push(`--from-file=ca.pem=${CA_CERT_PATH}`);
     }
     configMapArgs.push('-n', haCfg.k8sNamespace, '--dry-run=client', '-o', 'yaml');
-    await execa(config.kubectlBinary, configMapArgs).then(async ({ stdout }) => {
-      await execa(config.kubectlBinary, ['apply', '-f', '-', '-n', haCfg.k8sNamespace], { input: stdout });
+    const kEnv2 = { env: { ...process.env, ...kubeEnv() } };
+    await execa(config.kubectlBinary, [...kubeArgs(), ...configMapArgs], kEnv2).then(async ({ stdout }) => {
+      await execa(config.kubectlBinary, [...kubeArgs(), 'apply', '-f', '-', '-n', haCfg.k8sNamespace], { ...kEnv2, input: stdout });
     });
 
     logger.info('HAProxy deploy [k8s]: applying deployment manifest');
@@ -410,8 +413,9 @@ async function _deployHAProxy(mode: HAProxyDeployMode): Promise<string> {
       },
     });
 
-    const { stdout } = await execa(config.kubectlBinary, ['apply', '-f', '-', '-n', haCfg.k8sNamespace], {
+    const { stdout } = await execa(config.kubectlBinary, [...kubeArgs(), 'apply', '-f', '-', '-n', haCfg.k8sNamespace], {
       input: deployManifest,
+      env: { ...process.env, ...kubeEnv() },
     });
     logger.info({ stdout }, 'HAProxy deploy [k8s]: deployment applied');
     return stdout;
@@ -468,10 +472,10 @@ async function _stopHAProxy(mode: HAProxyDeployMode): Promise<string> {
   if (mode === 'kubernetes') {
     logger.info({ deployment: haCfg.k8sDeploymentName, namespace: haCfg.k8sNamespace }, 'HAProxy stop [k8s]: deleting deployment');
     const { stdout } = await execa(config.kubectlBinary, [
-      'delete', 'deployment', haCfg.k8sDeploymentName,
+      ...kubeArgs(), 'delete', 'deployment', haCfg.k8sDeploymentName,
       '-n', haCfg.k8sNamespace,
       '--ignore-not-found',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     logger.info({ stdout }, 'HAProxy stop [k8s]: deployment deleted');
     return stdout;
   }
@@ -506,21 +510,21 @@ export async function getHAProxyLogs(mode: HAProxyDeployMode, tail = 50): Promis
   if (mode === 'kubernetes') {
     try {
       const { stdout } = await execa(config.kubectlBinary, [
-        'logs', '-l', 'app=haproxy',
+        ...kubeArgs(), 'logs', '-l', 'app=haproxy',
         '-n', haCfg.k8sNamespace,
         '--tail', String(tail),
         '--all-containers',
-      ]);
+      ], { env: { ...process.env, ...kubeEnv() } });
       return stdout || '(no logs)';
     } catch (err) {
       // Try to get events if no pod logs available
       try {
         const { stdout } = await execa(config.kubectlBinary, [
-          'get', 'events',
+          ...kubeArgs(), 'get', 'events',
           '-n', haCfg.k8sNamespace,
           '--field-selector', `involvedObject.name=${haCfg.k8sDeploymentName}`,
           '--sort-by=.lastTimestamp',
-        ]);
+        ], { env: { ...process.env, ...kubeEnv() } });
         return stdout || `No logs available: ${err instanceof Error ? err.message : String(err)}`;
       } catch {
         return `No logs available: ${err instanceof Error ? err.message : String(err)}`;

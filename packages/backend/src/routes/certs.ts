@@ -11,6 +11,9 @@ import {
 } from '../services/cert.service.js';
 import { logger } from '../logger.js';
 
+const DNS_RE = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
+const ASCII_RE = /^[\x20-\x7E]+$/;
+
 const router = Router();
 
 router.get('/certs/ca', async (_req, res) => {
@@ -27,6 +30,19 @@ router.post('/certs/ca/generate', async (req, res) => {
   const { cn, org, days } = req.body as { cn?: string; org?: string; days?: number };
   if (!cn || !org || !days) {
     res.status(400).json({ success: false, error: 'cn, org, and days are required' });
+    return;
+  }
+
+  if (!DNS_RE.test(cn) || cn.length > 253) {
+    res.status(400).json({ success: false, error: 'cn must be a valid DNS name' });
+    return;
+  }
+  if (!ASCII_RE.test(org) || org.length > 64) {
+    res.status(400).json({ success: false, error: 'org must be printable ASCII (max 64 chars)' });
+    return;
+  }
+  if (!Number.isInteger(days) || days < 1 || days > 10950) {
+    res.status(400).json({ success: false, error: 'days must be 1–10950' });
     return;
   }
 
@@ -89,6 +105,15 @@ router.post('/certs/:serviceId/generate', async (req, res) => {
       success: false,
       error: 'secretName, keyName, cn, and days are required',
     });
+    return;
+  }
+
+  if (!DNS_RE.test(cn) || cn.length > 253) {
+    res.status(400).json({ success: false, error: 'cn must be a valid DNS name' });
+    return;
+  }
+  if (!Number.isInteger(days) || days < 1 || days > 10950) {
+    res.status(400).json({ success: false, error: 'days must be 1–10950' });
     return;
   }
 

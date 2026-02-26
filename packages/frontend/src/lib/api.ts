@@ -115,6 +115,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ ip }),
     }),
+
+  getKubeContexts: () =>
+    request<{ contexts: string[]; current: string | null }>('/kubernetes/contexts'),
+
+  setKubeContext: (context: string) =>
+    request<{ context: string }>('/kubernetes/context', {
+      method: 'PUT',
+      body: JSON.stringify({ context }),
+    }),
 };
 
 export function createSSEStream(path: string, onMessage: (data: unknown) => void): () => void {

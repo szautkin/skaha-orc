@@ -8,3 +8,13 @@ build/
 coverage/
 .turbo/
 *.tsbuildinfo
+
+# Secrets & certificates
+*.pem
+*.key
+*.crt
+*.p12
+
+# Runtime config (user-specific)
+helm-values/
+haproxy/

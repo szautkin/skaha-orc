@@ -4,6 +4,7 @@ import type { ServiceId } from '@skaha-orc/shared';
 import { SERVICE_CATALOG } from '@skaha-orc/shared';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
+import { kubeArgs, kubeEnv } from './kube-args.js';
 
 /**
  * List deployment (and statefulset) names in a namespace that belong to a helm release.
@@ -18,6 +19,7 @@ async function getDeploymentNames(
 
   try {
     const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(),
       'get',
       'deploy',
       '-n',
@@ -25,7 +27,7 @@ async function getDeploymentNames(
       '--no-headers',
       '-o',
       'custom-columns=NAME:.metadata.name',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     for (const line of stdout.split('\n')) {
       const name = line.trim();
       if (name && name.startsWith(releaseName)) {
@@ -38,6 +40,7 @@ async function getDeploymentNames(
 
   try {
     const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(),
       'get',
       'statefulset',
       '-n',
@@ -45,7 +48,7 @@ async function getDeploymentNames(
       '--no-headers',
       '-o',
       'custom-columns=NAME:.metadata.name',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
     for (const line of stdout.split('\n')) {
       const name = line.trim();
       if (name && name.startsWith(releaseName)) {
@@ -64,13 +67,14 @@ export async function getPods(serviceId: ServiceId): Promise<Pod[]> {
 
   try {
     const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(),
       'get',
       'pods',
       '-n',
       def.namespace,
       '-o',
       'json',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
 
     const parsed = JSON.parse(stdout) as {
       items: Array<{
@@ -116,13 +120,14 @@ export async function getEvents(serviceId: ServiceId): Promise<KubeEvent[]> {
 
   try {
     const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(),
       'get',
       'events',
       '-n',
       def.namespace,
       '-o',
       'json',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
 
     const parsed = JSON.parse(stdout) as {
       items: Array<{
@@ -169,13 +174,14 @@ export async function scaleDeployment(
   for (const deploy of deployments) {
     try {
       const { stdout } = await execa(config.kubectlBinary, [
+        ...kubeArgs(),
         'scale',
         `deployment/${deploy}`,
         '--replicas',
         String(replicas),
         '-n',
         namespace,
-      ]);
+      ], { env: { ...process.env, ...kubeEnv() } });
       outputs.push(stdout);
     } catch (err) {
       allSuccess = false;
@@ -186,13 +192,14 @@ export async function scaleDeployment(
   for (const sts of statefulsets) {
     try {
       const { stdout } = await execa(config.kubectlBinary, [
+        ...kubeArgs(),
         'scale',
         `statefulset/${sts}`,
         '--replicas',
         String(replicas),
         '-n',
         namespace,
-      ]);
+      ], { env: { ...process.env, ...kubeEnv() } });
       outputs.push(stdout);
     } catch (err) {
       allSuccess = false;
@@ -216,6 +223,7 @@ export async function isServicePaused(serviceId: ServiceId): Promise<boolean> {
 
   try {
     const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(),
       'get',
       'deploy',
       ...deployments,
@@ -223,7 +231,7 @@ export async function isServicePaused(serviceId: ServiceId): Promise<boolean> {
       def.namespace,
       '-o',
       'json',
-    ]);
+    ], { env: { ...process.env, ...kubeEnv() } });
 
     const parsed = JSON.parse(stdout) as {
       kind?: string;
@@ -249,13 +257,14 @@ export function streamPodLogs(
   onError: (err: Error) => void,
 ): () => void {
   const proc = execa(config.kubectlBinary, [
+    ...kubeArgs(),
     'logs',
     '-f',
     podName,
     '-n',
     namespace,
     '--tail=200',
-  ]);
+  ], { env: { ...process.env, ...kubeEnv() } });
 
   proc.stdout?.on('data', (chunk: Buffer) => {
     const lines = chunk.toString().split('\n');

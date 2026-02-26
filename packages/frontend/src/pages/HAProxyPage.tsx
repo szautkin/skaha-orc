@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Loader2, CheckCircle, XCircle, Play, Square, RefreshCw, Wand2, AlertTriangle, Lock } from 'lucide-react';
 import type { HAProxyDeployMode, HAProxyTestConfigResponse } from '@skaha-orc/shared';
 import {
@@ -52,6 +52,20 @@ export function HAProxyPage() {
   const preflight = preflightQuery.data;
   const preflightReady = preflight?.ready ?? false;
   const isDirty = editorContent !== null && editorContent !== configQuery.data?.content;
+
+  const handleBeforeUnload = useCallback(
+    (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+      }
+    },
+    [isDirty],
+  );
+
+  useEffect(() => {
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [handleBeforeUnload]);
 
   const caExists = caInfoQuery.data?.exists ?? false;
   const certExists = certInfoQuery.data?.exists ?? false;

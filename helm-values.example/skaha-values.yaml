@@ -1,0 +1,23 @@
+# Skaha — example values
+# Replace placeholder values before deploying
+
+deployment:
+  hostname: your-platform.example.com
+  extraHosts:
+    - ip: "10.0.0.1"
+      hostname: haproxy.cadc.dao.nrc.ca
+
+skaha:
+  registryURL: images.your-registry.example.com
+  oidc:
+    uri: https://oidc.example.com/auth
+    clientID: CHANGE_ME
+    clientSecret: CHANGE_ME
+    callbackURI: https://your-platform.example.com/skaha/oidc-callback
+    redirectURI: https://your-platform.example.com/skaha
+    scope: openid profile
+
+secrets:
+  skaha-tls-secret:
+    tls-cert.pem: ""
+    tls-key.pem: ""

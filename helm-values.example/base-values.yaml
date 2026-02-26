@@ -1,0 +1,8 @@
+# Base (Traefik) — example values
+# Copy this directory to ./helm-values/ and customize
+
+traefik:
+  enabled: true
+  websecure:
+    tls:
+      enabled: true
