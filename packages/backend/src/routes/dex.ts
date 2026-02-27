@@ -12,6 +12,9 @@ interface DexStaticUser {
   username: string;
   userID: string;
   hash: string;
+  /** Emitted as the preferred_username JWT claim. Must be set for
+   *  StandardIdentityManager to create an HttpPrincipal. */
+  preferredUsername?: string;
 }
 
 /**
@@ -106,6 +109,12 @@ router.put('/dex/users', async (req, res) => {
     if (!u.email || !u.username || !u.userID || !u.hash) {
       res.status(400).json({ success: false, error: 'Each user must have email, username, userID, and hash' });
       return;
+    }
+    // Auto-set preferredUsername to match username when missing.
+    // Without this, Dex JWT tokens won't have the preferred_username claim,
+    // and StandardIdentityManager can't create an HttpPrincipal.
+    if (!u.preferredUsername) {
+      u.preferredUsername = u.username;
     }
   }
 

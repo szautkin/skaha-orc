@@ -31,6 +31,9 @@ data:
       - email: {{ .email }}
         hash: {{ .hash }}
         username: {{ .username }}
+        {{- if .preferredUsername }}
+        preferredUsername: {{ .preferredUsername }}
+        {{- end }}
         userID: {{ .userID }}
     {{- end }}
     {{- end }}

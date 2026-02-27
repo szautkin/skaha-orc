@@ -7,7 +7,7 @@ import { getServiceStatus, getAllStatuses } from '../services/status.service.js'
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
-import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries } from '../services/bootstrap.service.js';
+import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername } from '../services/bootstrap.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
 import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
@@ -909,6 +909,7 @@ router.post('/services/:id/deploy', async (req, res) => {
     try { await syncPosixMapperDbConfig(); } catch { /* best-effort */ }
     try { await syncGmsId(); } catch { /* best-effort */ }
     try { await syncRegistryEntries(); } catch { /* best-effort */ }
+    try { await syncDexPreferredUsername(); } catch { /* best-effort */ }
 
     const result = await helmDeploy(serviceId, { dryRun });
     if (!result.success) {

@@ -285,6 +285,29 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
       ],
     },
     {
+      title: 'OIDC',
+      fields: [
+        {
+          name: 'skahaClientId',
+          label: 'Client ID',
+          type: 'text',
+          path: 'deployment.skaha.oidc.clientID',
+        },
+        {
+          name: 'skahaClientSecret',
+          label: 'Client Secret',
+          type: 'password',
+          path: 'deployment.skaha.oidc.clientSecret',
+        },
+        {
+          name: 'skahaScope',
+          label: 'Scope',
+          type: 'text',
+          path: 'deployment.skaha.oidc.scope',
+        },
+      ],
+    },
+    {
       title: 'Sessions',
       fields: [
         {
@@ -486,6 +509,7 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           type: 'select',
           path: 'deployment.cavern.identityManagerClass',
           options: [
+            'org.opencadc.auth.StandardIdentityManager',
             'org.opencadc.posix.mapper.PosixIdentityManager',
             'ca.nrc.cadc.auth.X500IdentityManager',
           ],
@@ -793,6 +817,30 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           label: 'Enable Password DB',
           type: 'boolean',
           path: 'enablePasswordDB',
+        },
+      ],
+    },
+    {
+      title: 'Ingress',
+      fields: [
+        {
+          name: 'ingressEnabled',
+          label: 'Enable Ingress',
+          type: 'boolean',
+          path: 'ingress.enabled',
+        },
+        {
+          name: 'ingressClass',
+          label: 'Ingress Class',
+          type: 'text',
+          path: 'ingress.className',
+          placeholder: 'base-traefik',
+        },
+        {
+          name: 'ingressHost',
+          label: 'Ingress Host',
+          type: 'text',
+          path: 'ingress.host',
         },
       ],
     },

@@ -246,7 +246,7 @@ export async function injectCaCertIntoValues(): Promise<void> {
       const secrets = ((data.secrets ?? {}) as Record<string, Record<string, string>>);
       let changed = false;
 
-      // Inject cert secret — OpenCADC containers auto-import ca.crt via update-ca-trust
+      // Inject cert secret — mounted at /config/cacerts/, picked up by update-ca-trust at startup
       if (!secrets[secretName]?.['ca.crt'] || secrets[secretName]['ca.crt'].length <= 10) {
         if (!secrets[secretName]) secrets[secretName] = {};
         secrets[secretName]['ca.crt'] = caB64;
@@ -283,29 +283,27 @@ export async function injectCaCertIntoValues(): Promise<void> {
           changed = true;
         }
 
-        // Clean up stale JAVA_TOOL_OPTIONS — breaks trust chain by overriding JVM defaults
+        // Point Java at the system-generated truststore.
+        // update-ca-trust runs at container start and generates a JKS truststore at
+        // /etc/pki/ca-trust/extracted/java/cacerts that includes our custom CA cert.
+        // Without this, Java uses its default truststore (/etc/java/.../lib/security/cacerts)
+        // which does NOT include the custom CA, causing HTTPS calls between services to fail.
+        const SYSTEM_TRUSTSTORE = '/etc/pki/ca-trust/extracted/java/cacerts';
+        const JTO_VALUE = `-Djavax.net.ssl.trustStore=${SYSTEM_TRUSTSTORE}`;
+
         const envKey = `${prefix}.extraEnv`;
-        const envArr = getNestedArray(data, envKey) as Record<string, unknown>[] | undefined;
-        if (envArr) {
-          const filtered = envArr.filter((e) => e.name !== 'JAVA_TOOL_OPTIONS');
-          if (filtered.length !== envArr.length) {
-            if (filtered.length > 0) {
-              setNestedVal(data, envKey, filtered);
-            } else {
-              // Remove empty extraEnv array entirely
-              const parentPath = prefix;
-              const parentKeys = parentPath.split('.');
-              let parent: unknown = data;
-              for (const k of parentKeys) {
-                if (parent == null || typeof parent !== 'object') break;
-                parent = (parent as Record<string, unknown>)[k];
-              }
-              if (parent && typeof parent === 'object') {
-                delete (parent as Record<string, unknown>).extraEnv;
-              }
-            }
+        const envArr = (getNestedArray(data, envKey) ?? []) as Record<string, unknown>[];
+        const jtoIdx = envArr.findIndex((e) => e.name === 'JAVA_TOOL_OPTIONS');
+        if (jtoIdx >= 0) {
+          if (envArr[jtoIdx]!.value !== JTO_VALUE) {
+            envArr[jtoIdx] = { name: 'JAVA_TOOL_OPTIONS', value: JTO_VALUE };
+            setNestedVal(data, envKey, envArr);
             changed = true;
           }
+        } else {
+          envArr.push({ name: 'JAVA_TOOL_OPTIONS', value: JTO_VALUE });
+          setNestedVal(data, envKey, envArr);
+          changed = true;
         }
       }
 
@@ -452,6 +450,38 @@ export async function syncRegistryEntries(): Promise<void> {
     logger.info('Auto-registered GMS (mock-ac) in IVOA registry');
   } catch (err) {
     logger.warn({ err }, 'Failed to sync registry entries');
+  }
+}
+
+/**
+ * Ensures every Dex staticPassword entry has preferredUsername set.
+ * Without it, Dex JWT tokens lack the preferred_username claim and
+ * StandardIdentityManager cannot create an HttpPrincipal → auth fails.
+ */
+export async function syncDexPreferredUsername(): Promise<void> {
+  const dexDef = SERVICE_CATALOG['dex' as keyof typeof SERVICE_CATALOG];
+  if (!dexDef?.valuesFile) return;
+
+  try {
+    const data = await readValuesFile(dexDef.valuesFile);
+    const passwords = data.staticPasswords as Array<Record<string, string>> | undefined;
+    if (!Array.isArray(passwords) || passwords.length === 0) return;
+
+    let changed = false;
+    for (const entry of passwords) {
+      if (entry.username && !entry.preferredUsername) {
+        entry.preferredUsername = entry.username;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      data.staticPasswords = passwords;
+      await writeValuesFile(dexDef.valuesFile, data);
+      logger.info('Auto-set preferredUsername for Dex static passwords');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync Dex preferredUsername');
   }
 }
 
