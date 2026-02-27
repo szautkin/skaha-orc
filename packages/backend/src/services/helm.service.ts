@@ -86,6 +86,41 @@ function getReleaseName(serviceId: ServiceId): string {
   return serviceId;
 }
 
+/**
+ * Ensures a namespace has Helm ownership labels/annotations so that
+ * `helm upgrade --install --create-namespace` can adopt it.
+ * This prevents the "invalid ownership metadata" error when a namespace
+ * was created by another mechanism (HAProxy k8s deploy, manual kubectl, etc.).
+ */
+async function ensureNamespaceHelmLabels(serviceId: ServiceId): Promise<void> {
+  const def = SERVICE_CATALOG[serviceId];
+  const ns = def.namespace;
+  // Only the 'base' chart manages namespace creation; other charts just use it
+  const releaseName = serviceId === 'base' ? 'base' : serviceId;
+
+  try {
+    // Check if namespace exists
+    await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'get', 'namespace', ns,
+    ], { env: { ...process.env, ...kubeEnv() } });
+
+    // Namespace exists — ensure it has Helm labels
+    await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'label', 'namespace', ns,
+      'app.kubernetes.io/managed-by=Helm', '--overwrite',
+    ], { env: { ...process.env, ...kubeEnv() } });
+    await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'annotate', 'namespace', ns,
+      `meta.helm.sh/release-name=${releaseName}`,
+      `meta.helm.sh/release-namespace=default`,
+      '--overwrite',
+    ], { env: { ...process.env, ...kubeEnv() } });
+    logger.debug({ ns, releaseName }, 'Ensured namespace has Helm ownership labels');
+  } catch {
+    // Namespace doesn't exist yet — Helm will create it with --create-namespace
+  }
+}
+
 export async function helmDeploy(
   serviceId: ServiceId,
   options: { dryRun?: boolean } = {},
@@ -107,6 +142,10 @@ export async function helmDeploy(
   if (def.chartSource.type === 'kubectl') {
     return kubectlApply(serviceId);
   }
+
+  // Pre-deploy: ensure target namespace has Helm ownership labels.
+  // Without these, `helm upgrade --install` refuses to adopt an existing namespace.
+  await ensureNamespaceHelmLabels(serviceId);
 
   const chartRef = getChartRef(serviceId);
   const releaseName = getReleaseName(serviceId);
@@ -247,7 +286,83 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
       `  volumeName: skaha-pv`,
     ];
 
-    return [...pvLines, `---`, ...pvcLines].join('\n');
+    // Workload PV/PVC — used by Skaha session pods to access cavern storage
+    const wl = (values.workload ?? {}) as Record<string, unknown>;
+    const wlPvName = String(wl.pvName || 'skaha-workload-pv');
+    const wlPvcName = String(wl.pvcName || 'skaha-workload-cavern-pvc');
+    const wlNamespace = String(wl.namespace || 'skaha-workload');
+    const wlCapacity = String(wl.capacity || capacity);
+    const wlStorageClass = String(wl.storageClassName ?? storageClass);
+    const wlAccessModes = (wl.accessModes ?? ['ReadWriteMany']) as string[];
+    const wlAccessMode = wlAccessModes[0] || 'ReadWriteMany';
+    const wlHostPath = String(wl.hostPath || hostPath || '/var/lib/k8s-pvs/science-platform');
+
+    // Workload PV uses local volume with node affinity for local dev,
+    // or the same NFS/hostPath source as cavern for production
+    const wlPvSourceLines = useNfs
+      ? [
+          `  nfs:`,
+          `    server: "${nfsServer}"`,
+          `    path: "${nfsPath}"`,
+        ]
+      : [
+          `  local:`,
+          `    path: "${wlHostPath}"`,
+          `  nodeAffinity:`,
+          `    required:`,
+          `      nodeSelectorTerms:`,
+          `        - matchExpressions:`,
+          `            - key: kubernetes.io/hostname`,
+          `              operator: In`,
+          `              values:`,
+          `                - docker-desktop`,
+        ];
+
+    const wlPvLines = [
+      `apiVersion: v1`,
+      `kind: PersistentVolume`,
+      `metadata:`,
+      `  name: ${wlPvName}`,
+      `  labels:`,
+      `    storage: skaha-workload-storage`,
+      `  annotations:`,
+      `    helm.sh/resource-policy: keep`,
+      `spec:`,
+      `  capacity:`,
+      `    storage: "${wlCapacity}"`,
+      `  accessModes:`,
+      `    - ${wlAccessMode}`,
+      `  storageClassName: "${wlStorageClass}"`,
+      `  persistentVolumeReclaimPolicy: ${String(wl.reclaimPolicy || 'Retain')}`,
+      ...wlPvSourceLines,
+    ];
+
+    // Workload PVC lives in the skaha-workload namespace (where session pods run)
+    const wlPvcLines = [
+      `apiVersion: v1`,
+      `kind: PersistentVolumeClaim`,
+      `metadata:`,
+      `  name: ${wlPvcName}`,
+      `  namespace: ${wlNamespace}`,
+      `spec:`,
+      `  accessModes:`,
+      `    - ${wlAccessMode}`,
+      `  storageClassName: "${wlStorageClass}"`,
+      `  resources:`,
+      `    requests:`,
+      `      storage: "${wlCapacity}"`,
+      `  volumeName: ${wlPvName}`,
+    ];
+
+    // Ensure the workload namespace exists
+    const nsLines = [
+      `apiVersion: v1`,
+      `kind: Namespace`,
+      `metadata:`,
+      `  name: ${wlNamespace}`,
+    ];
+
+    return [...pvLines, `---`, ...pvcLines, `---`, ...nsLines, `---`, ...wlPvLines, `---`, ...wlPvcLines].join('\n');
   }
 
   if (serviceId === 'posix-mapper-db') {
@@ -424,6 +539,12 @@ async function kubectlApply(
   }
 }
 
+/**
+ * Services whose PVCs must survive uninstall (databases, etc.).
+ * Their PVCs are stripped from `kubectl delete` manifests.
+ */
+const PRESERVE_PVC_SERVICES = new Set<ServiceId>(['posix-mapper-db']);
+
 async function kubectlDelete(
   serviceId: ServiceId,
 ): Promise<{ success: boolean; output: string }> {
@@ -442,7 +563,103 @@ async function kubectlDelete(
   }
 
   const manifest = renderManifest(serviceId, values);
+  const docs = manifest.split(/^---$/m);
 
+  // For services with persistent data (DBs), strip PVCs to preserve data.
+  // For 'volumes' service, we need special ordering: PVC first, then PV
+  // with finalizer cleanup to avoid getting stuck in Terminating state.
+  if (PRESERVE_PVC_SERVICES.has(serviceId)) {
+    const safeManifest = docs
+      .filter((doc) => !doc.includes('kind: PersistentVolumeClaim'))
+      .join('---');
+    return kubectlDeleteManifest(serviceId, safeManifest, '(PVCs preserved)');
+  }
+
+  if (serviceId === 'volumes') {
+    return kubectlDeleteVolumes(serviceId, docs);
+  }
+
+  return kubectlDeleteManifest(serviceId, manifest);
+}
+
+/** Delete volumes in correct order: PVC → wait → PV with finalizer cleanup. */
+async function kubectlDeleteVolumes(
+  serviceId: ServiceId,
+  docs: string[],
+): Promise<{ success: boolean; output: string }> {
+  const outputs: string[] = [];
+
+  // 1. Delete PVCs first (must be unbound before PV can be deleted)
+  const pvcDocs = docs.filter((d) => d.includes('kind: PersistentVolumeClaim'));
+  if (pvcDocs.length > 0) {
+    try {
+      const { stdout, stderr } = await execa(
+        config.kubectlBinary,
+        [...kubeArgs(), 'delete', '-f', '-', '--ignore-not-found', '--timeout=15s'],
+        { input: pvcDocs.join('---'), env: { ...process.env, ...kubeEnv() } },
+      );
+      outputs.push(stdout, stderr);
+    } catch (err) {
+      outputs.push(`PVC delete: ${execaErrorDetail(err).message}`);
+    }
+  }
+
+  // 2. Delete PVs — if they get stuck on finalizers, patch them
+  const pvDocs = docs.filter((d) => d.includes('kind: PersistentVolume') && !d.includes('kind: PersistentVolumeClaim'));
+  if (pvDocs.length > 0) {
+    try {
+      await execa(
+        config.kubectlBinary,
+        [...kubeArgs(), 'delete', '-f', '-', '--ignore-not-found', '--timeout=15s'],
+        { input: pvDocs.join('---'), env: { ...process.env, ...kubeEnv() } },
+      );
+      outputs.push('PVs deleted');
+    } catch {
+      // PVs stuck in Terminating — remove finalizers
+      const pvNames = pvDocs
+        .map((d) => d.match(/name:\s*(\S+)/)?.[1])
+        .filter(Boolean) as string[];
+      for (const pvName of pvNames) {
+        try {
+          await execa(config.kubectlBinary, [
+            ...kubeArgs(), 'patch', 'pv', pvName,
+            '-p', '{"metadata":{"finalizers":null}}',
+          ], { env: { ...process.env, ...kubeEnv() } });
+          outputs.push(`Cleared finalizer on PV ${pvName}`);
+        } catch {
+          outputs.push(`Could not clear finalizer on PV ${pvName}`);
+        }
+      }
+    }
+  }
+
+  // 3. Delete remaining resources (ConfigMaps, etc.) but NOT namespaces
+  const otherDocs = docs.filter(
+    (d) => !d.includes('kind: PersistentVolume') && !d.includes('kind: Namespace'),
+  );
+  if (otherDocs.length > 0) {
+    try {
+      const { stdout, stderr } = await execa(
+        config.kubectlBinary,
+        [...kubeArgs(), 'delete', '-f', '-', '--ignore-not-found'],
+        { input: otherDocs.join('---'), env: { ...process.env, ...kubeEnv() } },
+      );
+      outputs.push(stdout, stderr);
+    } catch (err) {
+      outputs.push(`Other resources: ${execaErrorDetail(err).message}`);
+    }
+  }
+
+  const output = outputs.filter(Boolean).join('\n');
+  logger.info({ serviceId, output }, 'volumes delete completed');
+  return { success: true, output };
+}
+
+async function kubectlDeleteManifest(
+  serviceId: ServiceId,
+  manifest: string,
+  suffix = '',
+): Promise<{ success: boolean; output: string }> {
   try {
     const { stdout, stderr } = await execa(
       config.kubectlBinary,
@@ -450,7 +667,7 @@ async function kubectlDelete(
       { input: manifest, env: { ...process.env, ...kubeEnv() } },
     );
     const output = stdout + '\n' + stderr;
-    logger.info({ serviceId, output }, 'kubectl delete succeeded');
+    logger.info({ serviceId, output }, `kubectl delete succeeded ${suffix}`);
     return { success: true, output };
   } catch (err) {
     const detail = execaErrorDetail(err);

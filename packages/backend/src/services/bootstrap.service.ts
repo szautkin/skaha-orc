@@ -9,6 +9,7 @@ import { logger } from '../logger.js';
 import { getCaInfo, generateCA, generateHAProxyCert, HAPROXY_CERT_PATH, CA_CERT_PATH } from './cert.service.js';
 import { generateHAProxyConfig, saveHAProxyConfig } from './haproxy.service.js';
 import { readValuesFile, writeValuesFile } from './yaml.service.js';
+import { kubectlExec } from './kubectl.service.js';
 
 export async function ensureDirectories(): Promise<void> {
   const dirs = [
@@ -173,7 +174,9 @@ export async function initializeCerts(): Promise<void> {
       await generateHAProxyCert({ cn: PLATFORM_HOSTNAME, days: 3650 });
     }
 
-    // Regenerate haproxy.cfg with SSL now that certs exist
+    // Regenerate haproxy.cfg with SSL now that certs exist.
+    // Use default (container) paths — kubernetes/docker deploy mounts certs
+    // at container paths. Process mode regenerates config at deploy time.
     if (await fileExists(HAPROXY_CERT_PATH) && await fileExists(CA_CERT_PATH)) {
       const sslConfig = generateHAProxyConfig({ enableSsl: true });
       await saveHAProxyConfig(sslConfig);
@@ -482,6 +485,129 @@ export async function syncDexPreferredUsername(): Promise<void> {
     }
   } catch (err) {
     logger.warn({ err }, 'Failed to sync Dex preferredUsername');
+  }
+}
+
+/**
+ * Ensures posix-mapper values have authorizedClients so Cavern and Skaha
+ * can request UID/GID mappings. Without this, user sessions fail.
+ */
+export async function syncPosixMapperAuthorizedClients(): Promise<void> {
+  const pmDef = SERVICE_CATALOG['posix-mapper'];
+  if (!pmDef?.valuesFile) return;
+
+  try {
+    const data = await readValuesFile(pmDef.valuesFile);
+    const pm = ((data.deployment as Record<string, unknown>)?.posixMapper ?? {}) as Record<string, unknown>;
+    const existing = pm.authorizedClients as string[] | undefined;
+    if (Array.isArray(existing) && existing.length > 0) return;
+
+    pm.authorizedClients = ['sshd', 'cavern', 'skaha'];
+    (data.deployment as Record<string, unknown>).posixMapper = pm;
+    await writeValuesFile(pmDef.valuesFile, data);
+    logger.info('Auto-set posix-mapper authorizedClients');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync posix-mapper authorizedClients');
+  }
+}
+
+/**
+ * Ensures Cavern rootOwner defaults to root/0/0 when empty.
+ * Using any other uid/gid requires that user/group to exist in the container.
+ */
+export async function syncCavernRootOwner(): Promise<void> {
+  const cavernDef = SERVICE_CATALOG['cavern'];
+  if (!cavernDef?.valuesFile) return;
+
+  try {
+    const data = await readValuesFile(cavernDef.valuesFile);
+    const cavern = ((data.deployment as Record<string, unknown>)?.cavern ?? {}) as Record<string, unknown>;
+    const fs = (cavern.filesystem ?? {}) as Record<string, unknown>;
+    const ro = (fs.rootOwner ?? {}) as Record<string, string>;
+
+    let changed = false;
+    if (!ro.username) { ro.username = 'root'; changed = true; }
+    if (!ro.uid && ro.uid !== '0') { ro.uid = '0'; changed = true; }
+    if (!ro.gid && ro.gid !== '0') { ro.gid = '0'; changed = true; }
+
+    if (changed) {
+      fs.rootOwner = ro;
+      cavern.filesystem = fs;
+      (data.deployment as Record<string, unknown>).cavern = cavern;
+      await writeValuesFile(cavernDef.valuesFile, data);
+      logger.info('Auto-set Cavern rootOwner to root/0/0');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync Cavern rootOwner');
+  }
+}
+
+/**
+ * Seeds the posix-mapper database with initial user mappings if the
+ * mapping.users table is empty.  Reads seed data from
+ * posix-mapper-postgres values (postgres.seed.users).
+ *
+ * This prevents the recurring problem where a fresh DB auto-assigns
+ * new UIDs that don't match existing filesystem ownership, causing
+ * Cavern's cadc-gms-1.0.14 TSVPosixPrincipalParser to NPE on null.
+ */
+export async function seedPosixMapperDb(): Promise<void> {
+  const dbDef = SERVICE_CATALOG['posix-mapper-db'];
+  if (!dbDef?.valuesFile) return;
+
+  try {
+    const data = await readValuesFile(dbDef.valuesFile);
+    const pg = (data.postgres ?? {}) as Record<string, unknown>;
+    const auth = (pg.auth ?? {}) as Record<string, unknown>;
+    const seed = (pg.seed ?? {}) as Record<string, unknown>;
+    const users = (seed.users ?? []) as Array<Record<string, unknown>>;
+
+    if (users.length === 0) {
+      logger.debug('No seed users configured in posix-mapper-postgres values');
+      return;
+    }
+
+    const username = String(auth.username || 'posixmapper');
+    const database = String(auth.database || 'posixmapper');
+    const schema = String(auth.schema || 'mapping');
+
+    // Check if the users table has any rows
+    const countResult = await kubectlExec(
+      dbDef.namespace,
+      'posix-mapper-postgres',
+      ['psql', '-U', username, '-d', database, '-t', '-c',
+       `SELECT COUNT(*) FROM ${schema}.users;`],
+    );
+
+    const count = parseInt(countResult.trim(), 10);
+    if (count > 0) {
+      logger.debug({ count }, 'posix-mapper DB already has user entries, skipping seed');
+      return;
+    }
+
+    // DB is empty — seed it
+    const statements: string[] = [];
+    for (const u of users) {
+      const uid = Number(u.uid);
+      const uname = String(u.username || '').replace(/'/g, "''");
+      if (!uname || isNaN(uid)) continue;
+      statements.push(
+        `INSERT INTO ${schema}.users (uid, username) VALUES (${uid}, '${uname}') ON CONFLICT DO NOTHING;`,
+      );
+    }
+
+    if (statements.length === 0) return;
+
+    await kubectlExec(
+      dbDef.namespace,
+      'posix-mapper-postgres',
+      ['psql', '-U', username, '-d', database, '-c', statements.join(' ')],
+    );
+
+    logger.info({ users: users.map((u) => u.username) }, 'Seeded posix-mapper DB with initial user mappings');
+  } catch (err) {
+    // This is best-effort — may fail if posix-mapper-db isn't deployed yet
+    logger.debug({ err }, 'Could not seed posix-mapper DB (may not be deployed yet)');
   }
 }
 

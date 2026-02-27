@@ -250,6 +250,53 @@ export async function isServicePaused(serviceId: ServiceId): Promise<boolean> {
   }
 }
 
+/**
+ * Run a command inside a pod via kubectl exec.
+ * Returns stdout on success, throws on failure.
+ */
+export async function kubectlExec(
+  namespace: string,
+  podPrefix: string,
+  command: string[],
+): Promise<string> {
+  // Find the pod by prefix
+  const pods = await getPodsByPrefix(namespace, podPrefix);
+  if (pods.length === 0) {
+    throw new Error(`No running pod found with prefix "${podPrefix}" in namespace "${namespace}"`);
+  }
+  const podName = pods[0]!;
+
+  const { stdout } = await execa(config.kubectlBinary, [
+    ...kubeArgs(),
+    'exec',
+    podName,
+    '-n',
+    namespace,
+    '--',
+    ...command,
+  ], { env: { ...process.env, ...kubeEnv() } });
+  return stdout;
+}
+
+async function getPodsByPrefix(namespace: string, prefix: string): Promise<string[]> {
+  try {
+    const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(),
+      'get',
+      'pods',
+      '-n',
+      namespace,
+      '--field-selector=status.phase=Running',
+      '--no-headers',
+      '-o',
+      'custom-columns=NAME:.metadata.name',
+    ], { env: { ...process.env, ...kubeEnv() } });
+    return stdout.split('\n').map((l) => l.trim()).filter((l) => l.startsWith(prefix));
+  } catch {
+    return [];
+  }
+}
+
 export function streamPodLogs(
   namespace: string,
   podName: string,

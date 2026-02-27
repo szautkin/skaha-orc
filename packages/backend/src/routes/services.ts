@@ -7,7 +7,7 @@ import { getServiceStatus, getAllStatuses } from '../services/status.service.js'
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
-import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername } from '../services/bootstrap.service.js';
+import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb } from '../services/bootstrap.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
 import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
@@ -705,7 +705,24 @@ export function findSemanticWarnings(serviceId: string, config: Record<string, u
     }
   }
 
-  // 5. Cavern identityManagerClass must be StandardIdentityManager
+  // 5. posix-mapper-db: warn if no seed users configured
+  if (serviceId === 'posix-mapper-db') {
+    const seed = getNestedValue(config, 'postgres.seed');
+    const seedUsers = seed && typeof seed === 'object' ? (seed as Record<string, unknown>).users : undefined;
+    if (!Array.isArray(seedUsers) || seedUsers.length === 0) {
+      warnings.push('postgres.seed.users: empty — fresh DB will auto-assign UIDs that may not match existing filesystem ownership');
+    }
+  }
+
+  // 6. posix-mapper: warn if authorizedClients is empty
+  if (serviceId === 'posix-mapper') {
+    const clients = getNestedValue(config, 'deployment.posixMapper.authorizedClients');
+    if (!Array.isArray(clients) || clients.length === 0) {
+      warnings.push('deployment.posixMapper.authorizedClients: empty — Cavern/Skaha cannot create UID mappings');
+    }
+  }
+
+  // 7. Cavern identityManagerClass must be StandardIdentityManager
   if (serviceId === 'cavern') {
     const cls = getNestedString(config, ['deployment', 'cavern', 'identityManagerClass']);
     if (cls && cls !== 'org.opencadc.auth.StandardIdentityManager') {
@@ -910,6 +927,9 @@ router.post('/services/:id/deploy', async (req, res) => {
     try { await syncGmsId(); } catch { /* best-effort */ }
     try { await syncRegistryEntries(); } catch { /* best-effort */ }
     try { await syncDexPreferredUsername(); } catch { /* best-effort */ }
+    try { await syncPosixMapperAuthorizedClients(); } catch { /* best-effort */ }
+    try { await syncCavernRootOwner(); } catch { /* best-effort */ }
+    try { await seedPosixMapperDb(); } catch { /* best-effort */ }
 
     const result = await helmDeploy(serviceId, { dryRun });
     if (!result.success) {

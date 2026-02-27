@@ -1,5 +1,7 @@
 import type { ServiceId } from '@skaha-orc/shared';
 import { SERVICE_CATALOG, PLATFORM_HOSTNAME } from '@skaha-orc/shared';
+import { readValuesFile } from './yaml.service.js';
+import { kubectlExec } from './kubectl.service.js';
 import { logger } from '../logger.js';
 
 export interface TestResult {
@@ -160,6 +162,68 @@ export async function runIntegrationTests(serviceId: ServiceId): Promise<TestRes
         return { status: 'fail' as const, message: `Expected redirect, got HTTP ${res.status}` };
       } catch (err) {
         return { status: 'fail' as const, message: `Request failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }));
+  }
+
+  // 6. posix-mapper DB seed validation — verify configured users exist in DB
+  if (serviceId === 'posix-mapper' || serviceId === 'posix-mapper-db') {
+    results.push(await timedTest('DB User Mappings', async () => {
+      const dbDef = SERVICE_CATALOG['posix-mapper-db'];
+      if (!dbDef?.valuesFile) return { status: 'skip' as const, message: 'No posix-mapper-db values file' };
+
+      try {
+        const data = await readValuesFile(dbDef.valuesFile);
+        const pg = (data.postgres ?? {}) as Record<string, unknown>;
+        const auth = (pg.auth ?? {}) as Record<string, unknown>;
+        const seed = (pg.seed ?? {}) as Record<string, unknown>;
+        const seedUsers = (seed.users ?? []) as Array<Record<string, unknown>>;
+
+        const dbUser = String(auth.username || 'posixmapper');
+        const database = String(auth.database || 'posixmapper');
+        const schema = String(auth.schema || 'mapping');
+
+        // Check total user count in DB
+        const countResult = await kubectlExec(
+          dbDef.namespace,
+          'posix-mapper-postgres',
+          ['psql', '-U', dbUser, '-d', database, '-t', '-c',
+           `SELECT COUNT(*) FROM ${schema}.users;`],
+        );
+        const count = parseInt(countResult.trim(), 10);
+
+        if (count === 0) {
+          return { status: 'fail' as const, message: 'mapping.users is EMPTY — UIDs will be auto-assigned and may mismatch filesystem' };
+        }
+
+        // Verify each seed user has the expected UID
+        const mismatches: string[] = [];
+        for (const u of seedUsers) {
+          const expectedUid = Number(u.uid);
+          const username = String(u.username || '');
+          if (!username || isNaN(expectedUid)) continue;
+
+          const uidResult = await kubectlExec(
+            dbDef.namespace,
+            'posix-mapper-postgres',
+            ['psql', '-U', dbUser, '-d', database, '-t', '-c',
+             `SELECT uid FROM ${schema}.users WHERE username='${username.replace(/'/g, "''")}';`],
+          );
+          const actualUid = parseInt(uidResult.trim(), 10);
+          if (isNaN(actualUid)) {
+            mismatches.push(`${username}: not in DB`);
+          } else if (actualUid !== expectedUid) {
+            mismatches.push(`${username}: expected uid=${expectedUid}, got uid=${actualUid}`);
+          }
+        }
+
+        if (mismatches.length > 0) {
+          return { status: 'fail' as const, message: `UID mismatches: ${mismatches.join('; ')}` };
+        }
+
+        return { status: 'pass' as const, message: `${count} user(s) in DB, seed UIDs match` };
+      } catch (err) {
+        return { status: 'fail' as const, message: `DB check failed: ${err instanceof Error ? err.message : String(err)}` };
       }
     }));
   }

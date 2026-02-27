@@ -418,6 +418,14 @@ async function _deployHAProxy(mode: HAProxyDeployMode): Promise<string> {
       env: { ...process.env, ...kubeEnv() },
     });
     logger.info({ stdout }, 'HAProxy deploy [k8s]: deployment applied');
+
+    // Force restart so pods pick up the new ConfigMap content
+    await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'rollout', 'restart', `deployment/${haCfg.k8sDeploymentName}`,
+      '-n', haCfg.k8sNamespace,
+    ], { env: { ...process.env, ...kubeEnv() } });
+    logger.info('HAProxy deploy [k8s]: rollout restarted to pick up new config');
+
     return stdout;
   }
 
@@ -444,8 +452,25 @@ async function _deployHAProxy(mode: HAProxyDeployMode): Promise<string> {
     return `Container started: ${containerId}`;
   }
 
-  // process mode
+  // process mode — regenerate config with host cert paths + resolved DNS IP
   logger.info({ binary: haCfg.binary, configPath: haCfg.configPath }, 'HAProxy deploy [process]: starting daemon');
+  const hasCerts = await fileExists(HAPROXY_CERT_PATH) && await fileExists(CA_CERT_PATH);
+  let kubeDnsIp: string | undefined;
+  try {
+    const { stdout: dnsOut } = await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'get', 'svc', 'kube-dns', '-n', 'kube-system',
+      '-o', 'jsonpath={.spec.clusterIP}',
+    ], { env: { ...process.env, ...kubeEnv() }, timeout: 5000 });
+    kubeDnsIp = dnsOut.trim() || undefined;
+  } catch { /* use default */ }
+
+  const processConfig = generateHAProxyConfig({
+    enableSsl: hasCerts,
+    deployMode: 'process',
+    kubeDnsIp,
+  });
+  await saveHAProxyConfig(processConfig);
+
   const { stdout } = await execa(haCfg.binary, ['-f', haCfg.configPath, '-D']);
   logger.info('HAProxy deploy [process]: daemon started');
   return stdout || 'HAProxy started as daemon';
@@ -581,12 +606,22 @@ const CONTAINER_CA_CERT = `${CONTAINER_CERT_DIR}/ca.pem`;
 
 export function generateHAProxyConfig(options?: {
   enableSsl?: boolean;
+  deployMode?: HAProxyDeployMode;
+  kubeDnsIp?: string;
 }): string {
   const enableSsl = options?.enableSsl ?? false;
-  const sslCert = CONTAINER_SSL_CERT;
-  const caFile = CONTAINER_CA_CERT;
+  const mode = options?.deployMode ?? 'kubernetes';
   const routes = getRoutingTable();
   const ns = config.defaultNamespace;
+
+  // Process mode: certs are on the host filesystem, not inside a container
+  const sslCert = mode === 'process' ? HAPROXY_CERT_PATH : CONTAINER_SSL_CERT;
+  const caFile = mode === 'process' ? CA_CERT_PATH : CONTAINER_CA_CERT;
+
+  // Process mode: K8s DNS hostname is not resolvable from host — use cluster IP
+  const dnsAddress = mode === 'process' && options?.kubeDnsIp
+    ? `${options.kubeDnsIp}:53`
+    : 'kube-dns.kube-system.svc.cluster.local:53';
 
   const lines: string[] = [];
 
@@ -599,7 +634,7 @@ export function generateHAProxyConfig(options?: {
 
   // Resolvers — K8s CoreDNS for runtime backend resolution
   lines.push('resolvers k8s-dns');
-  lines.push('  nameserver dns1 kube-dns.kube-system.svc.cluster.local:53');
+  lines.push(`  nameserver dns1 ${dnsAddress}`);
   lines.push('  accepted_payload_size 8192');
   lines.push('  resolve_retries 3');
   lines.push('  timeout resolve 1s');
