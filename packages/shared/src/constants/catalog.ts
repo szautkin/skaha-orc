@@ -1,4 +1,5 @@
 import type { ServiceDefinition, ServiceId, ServiceTier } from '../types/services.js';
+import type { DeploymentPhase } from '../types/deployment.js';
 
 export const PLATFORM_HOSTNAME = 'haproxy.cadc.dao.nrc.ca';
 
@@ -40,15 +41,15 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
   reg: {
     id: 'reg',
     name: 'Registry',
-    description: 'IVOA Registry service (nginx)',
+    description: 'IVOA Registry service',
     namespace: 'skaha-system',
     dependencies: ['base'],
-    chartSource: { type: 'local', path: 'charts/reg' },
-    valuesFile: null,
+    chartSource: { type: 'local', path: 'reg' },
+    valuesFile: 'reg-values.yaml',
     tier: 'core',
     endpointPath: '/reg',
-    k8sServiceName: 'reg-nginx-svc',
-    k8sServicePort: 80,
+    k8sServiceName: 'reg',
+    k8sServicePort: 8080,
   },
   volumes: {
     id: 'volumes',
@@ -94,7 +95,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     name: 'Skaha',
     description: 'Session management service with Redis',
     namespace: 'skaha-system',
-    dependencies: ['posix-mapper'],
+    dependencies: ['cavern'],
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'skaha' },
     valuesFile: 'skaha-values.yaml',
     tier: 'core',
@@ -108,12 +109,9 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'VOSpace storage service with PostgreSQL UWS',
     namespace: 'skaha-system',
     dependencies: ['posix-mapper'],
-    chartSource: {
-      type: 'local',
-      path: 'charts/cavern',
-    },
+    chartSource: { type: 'repo', repo: 'science-platform', chart: 'cavern' },
     valuesFile: 'cavern-values.yaml',
-    tier: 'recommended',
+    tier: 'core',
     endpointPath: '/cavern',
     k8sServiceName: 'cavern-tomcat-svc',
     k8sServicePort: 8080,
@@ -124,10 +122,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Web UI for launching sessions (OIDC + Redis)',
     namespace: 'skaha-system',
     dependencies: ['skaha'],
-    chartSource: {
-      type: 'local',
-      path: 'charts/science-portal',
-    },
+    chartSource: { type: 'repo', repo: 'science-platform', chart: 'scienceportal' },
     valuesFile: 'science-portal-values.yaml',
     tier: 'recommended',
     endpointPath: '/science-portal',
@@ -155,7 +150,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['cavern'],
     chartSource: {
       type: 'local',
-      path: 'charts/doi',
+      path: 'doi',
     },
     valuesFile: 'doi-values.yaml',
     tier: 'site',
@@ -171,7 +166,7 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     dependencies: ['base'],
     chartSource: {
       type: 'local',
-      path: 'charts/dex',
+      path: 'dex',
     },
     valuesFile: 'dex-values.yaml',
     tier: 'site',
@@ -240,6 +235,10 @@ export const DEPLOYMENT_PROFILES: DeploymentProfile[] = [
   },
 ];
 
+/**
+ * Groups all services from the catalog by their tier (core, recommended, site).
+ * Each service appears in exactly one tier.
+ */
 export function getServicesByTier(): Record<ServiceTier, ServiceId[]> {
   const result: Record<ServiceTier, ServiceId[]> = {
     core: [],
@@ -254,7 +253,13 @@ export function getServicesByTier(): Record<ServiceTier, ServiceId[]> {
   return result;
 }
 
-/** Topological sort using Kahn's algorithm. Returns deploy order. */
+/**
+ * Returns services in valid deployment order using topological sort (Kahn's algorithm).
+ * Respects dependency edges so each service is deployed after its prerequisites.
+ * @param selectedIds - Subset of services to order. Defaults to all services.
+ * @returns ServiceId array in deployment order.
+ * @throws If a dependency cycle is detected.
+ */
 export function getDeploymentOrder(
   selectedIds?: ServiceId[],
 ): ServiceId[] {
@@ -302,4 +307,29 @@ export function getDeploymentOrder(
   }
 
   return order;
+}
+
+const RUNNING_PHASES: ReadonlySet<DeploymentPhase> = new Set([
+  'deployed',
+  'healthy',
+  'waiting_ready',
+]);
+
+/**
+ * Returns the list of dependencies for `serviceId` that are NOT in a running
+ * phase according to `phaseMap`.  An empty array means all deps are satisfied.
+ */
+export function getUnmetDependencies(
+  serviceId: ServiceId,
+  phaseMap: ReadonlyMap<ServiceId, DeploymentPhase>,
+): { id: ServiceId; name: string }[] {
+  const def = SERVICE_CATALOG[serviceId];
+  if (!def) return [];
+
+  return def.dependencies
+    .filter((depId) => {
+      const phase = phaseMap.get(depId);
+      return !phase || !RUNNING_PHASES.has(phase);
+    })
+    .map((depId) => ({ id: depId, name: SERVICE_CATALOG[depId].name }));
 }

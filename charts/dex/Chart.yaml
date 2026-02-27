@@ -1,0 +1,9 @@
+apiVersion: v2
+name: dex
+description: "A Helm chart for Dex OIDC identity provider"
+
+type: application
+
+version: 0.1.0
+
+appVersion: "2.39.1"

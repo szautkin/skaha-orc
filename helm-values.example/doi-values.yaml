@@ -1,0 +1,6 @@
+# DOI — example values
+
+deployment:
+  extraHosts:
+    - ip: "10.0.0.1"
+      hostname: haproxy.cadc.dao.nrc.ca

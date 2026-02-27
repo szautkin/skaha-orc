@@ -1,9 +1,10 @@
 import type { UseFormRegister, FieldErrors, Control } from 'react-hook-form';
 import { useController } from 'react-hook-form';
 import { ExtraHostsEditor } from './ExtraHostsEditor';
+import { ServiceEntriesEditor } from './ServiceEntriesEditor';
 import type { ExtraHost } from '@skaha-orc/shared';
 
-type FieldType = 'text' | 'number' | 'boolean' | 'password' | 'textarea' | 'select' | 'extra-hosts';
+type FieldType = 'text' | 'number' | 'boolean' | 'password' | 'textarea' | 'select' | 'extra-hosts' | 'service-entries';
 
 export interface FieldDef {
   name: string;
@@ -28,6 +29,11 @@ export function FieldRenderer({ field, register, control }: FieldRendererProps) 
   if (field.type === 'extra-hosts') {
     if (!control) return null;
     return <ExtraHostsField field={field} control={control} />;
+  }
+
+  if (field.type === 'service-entries') {
+    if (!control) return null;
+    return <ServiceEntriesField field={field} control={control} />;
   }
 
   if (field.type === 'boolean') {
@@ -100,6 +106,28 @@ function ExtraHostsField({
     <div className="col-span-2">
       <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
       <ExtraHostsEditor value={(value as ExtraHost[]) ?? []} onChange={onChange} />
+    </div>
+  );
+}
+
+function ServiceEntriesField({
+  field,
+  control,
+}: {
+  field: FieldDef;
+  control: Control<Record<string, unknown>>;
+}) {
+  const {
+    field: { value, onChange },
+  } = useController({ name: field.path, control, defaultValue: [] });
+
+  return (
+    <div className="col-span-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
+      <ServiceEntriesEditor
+        value={(value as { id: string; url: string }[]) ?? []}
+        onChange={onChange}
+      />
     </div>
   );
 }

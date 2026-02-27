@@ -34,6 +34,7 @@ export async function deployAll(
     });
 
     const result = await helmDeploy(serviceId, { dryRun: options.dryRun });
+    logger.info({ serviceId, success: result.success, output: result.output }, 'Deploy-all: service result');
 
     if (result.success) {
       progress.completedServices.push(serviceId);
@@ -96,6 +97,7 @@ export async function stopAll(
     });
 
     const result = await helmUninstall(serviceId);
+    logger.info({ serviceId, success: result.success, output: result.output }, 'Stop-all: service result');
 
     if (result.success) {
       progress.completedServices.push(serviceId);
@@ -170,6 +172,7 @@ export async function pauseAll(
     });
 
     const result = await scaleDeployment(def.namespace, serviceId, 0);
+    logger.info({ serviceId, success: result.success, output: result.output }, 'Pause-all: service result');
 
     if (result.success) {
       progress.completedServices.push(serviceId);
@@ -242,6 +245,7 @@ export async function resumeAll(
     });
 
     const result = await scaleDeployment(def.namespace, serviceId, 1);
+    logger.info({ serviceId, success: result.success, output: result.output }, 'Resume-all: service result');
 
     if (result.success) {
       progress.completedServices.push(serviceId);

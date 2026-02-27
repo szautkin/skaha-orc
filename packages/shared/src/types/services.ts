@@ -96,4 +96,7 @@ export interface PlatformOidcSettings {
   issuerUri: string;
   sciencePortal: OidcClientConfig;
   storageUi: OidcClientConfig;
+  skaha: OidcClientConfig;
 }
+
+export type ReadinessLevel = 'healthy' | 'deployed' | 'warnings' | 'blocked' | 'idle' | 'testing' | 'failed';

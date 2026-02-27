@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import type { ServiceId } from '@skaha-orc/shared';
-import { deployAllRequestSchema } from '@skaha-orc/shared';
+import type { ServiceId, DeploymentPhase } from '@skaha-orc/shared';
+import { deployAllRequestSchema, SERVICE_CATALOG } from '@skaha-orc/shared';
+import { getAllStatuses } from '../services/status.service.js';
 import { deployAll, stopAll, pauseAll, resumeAll } from '../services/deploy.service.js';
 import { eventBus } from '../sse/event-bus.js';
 import { logger } from '../logger.js';
@@ -53,10 +54,40 @@ router.post('/deploy-all', async (req, res) => {
   }
 
   const { serviceIds, dryRun } = parsed.data;
+  const selectedSet = new Set(serviceIds as ServiceId[]);
 
   try {
+    // Check for external unmet deps (not in selected set AND not already deployed)
+    const statuses = await getAllStatuses();
+    const phaseMap = new Map<ServiceId, DeploymentPhase>(
+      statuses.map((s) => [s.id, s.status.phase]),
+    );
+    const externalUnmet: { serviceId: ServiceId; deps: { id: ServiceId; name: string }[] }[] = [];
+    for (const id of selectedSet) {
+      const deps = SERVICE_CATALOG[id as ServiceId]?.dependencies ?? [];
+      const missing = deps
+        .filter((depId) => {
+          if (selectedSet.has(depId)) return false; // will be deployed in this batch
+          const phase = phaseMap.get(depId);
+          return !phase || !(['deployed', 'healthy', 'waiting_ready'] as DeploymentPhase[]).includes(phase);
+        })
+        .map((depId) => ({ id: depId, name: SERVICE_CATALOG[depId].name }));
+      if (missing.length > 0) {
+        externalUnmet.push({ serviceId: id as ServiceId, deps: missing });
+      }
+    }
+
+    if (externalUnmet.length > 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Cannot deploy: some dependencies are not selected or deployed',
+        data: { externalUnmet },
+      });
+      return;
+    }
+
     const progress = await deployAll(serviceIds as ServiceId[], { dryRun });
-    res.json({ success: progress.failedServices.length === 0, data: progress });
+    res.json({ success: true, data: progress });
   } catch (err) {
     logger.error({ err }, 'Deploy-all failed');
     res.status(500).json({ success: false, error: 'Deploy-all failed' });
@@ -110,7 +141,7 @@ router.post('/stop-all', async (req, res) => {
 
   try {
     const progress = await stopAll(parsed.data.serviceIds as ServiceId[]);
-    res.json({ success: progress.failedServices.length === 0, data: progress });
+    res.json({ success: true, data: progress });
   } catch (err) {
     logger.error({ err }, 'Stop-all failed');
     res.status(500).json({ success: false, error: 'Stop-all failed' });
@@ -164,7 +195,7 @@ router.post('/pause-all', async (req, res) => {
 
   try {
     const progress = await pauseAll(parsed.data.serviceIds as ServiceId[]);
-    res.json({ success: progress.failedServices.length === 0, data: progress });
+    res.json({ success: true, data: progress });
   } catch (err) {
     logger.error({ err }, 'Pause-all failed');
     res.status(500).json({ success: false, error: 'Pause-all failed' });
@@ -218,7 +249,7 @@ router.post('/resume-all', async (req, res) => {
 
   try {
     const progress = await resumeAll(parsed.data.serviceIds as ServiceId[]);
-    res.json({ success: progress.failedServices.length === 0, data: progress });
+    res.json({ success: true, data: progress });
   } catch (err) {
     logger.error({ err }, 'Resume-all failed');
     res.status(500).json({ success: false, error: 'Resume-all failed' });

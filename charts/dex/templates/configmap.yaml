@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex-config
+  namespace: {{ .Release.Namespace }}
+data:
+  config.yaml: |
+    issuer: {{ .Values.issuer }}
+    storage:
+      type: {{ .Values.storage.type }}
+      config:
+        file: {{ .Values.storage.config.file }}
+    web:
+      http: {{ .Values.web.http }}
+    enablePasswordDB: {{ .Values.enablePasswordDB }}
+    {{- if .Values.staticClients }}
+    staticClients:
+    {{- range .Values.staticClients }}
+      - id: {{ .id }}
+        name: {{ .name }}
+        secret: {{ .secret }}
+        redirectURIs:
+        {{- range .redirectURIs }}
+          - {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.staticPasswords }}
+    staticPasswords:
+    {{- range .Values.staticPasswords }}
+      - email: {{ .email }}
+        hash: {{ .hash }}
+        username: {{ .username }}
+        userID: {{ .userID }}
+    {{- end }}
+    {{- end }}

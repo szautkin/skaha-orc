@@ -1,0 +1,14 @@
+# Science Portal — example values
+
+deployment:
+  sciencePortal:
+    oidc:
+      uri: https://oidc.example.com/auth
+      clientID: science-portal
+      clientSecret: CHANGE_ME
+      redirectURI: https://your-platform.example.com/science-portal
+      callbackURI: https://your-platform.example.com/science-portal/oidc-callback
+      scope: openid profile
+  extraHosts:
+    - ip: "10.0.0.1"
+      hostname: haproxy.cadc.dao.nrc.ca

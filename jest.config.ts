@@ -10,6 +10,7 @@ const config: Config = {
       moduleNameMapper: {
         '^@skaha-orc/shared$': '<rootDir>/src/index.ts',
         '^@skaha-orc/shared/(.*)$': '<rootDir>/src/$1',
+        '^(\\.{1,2}/.*)\\.js$': '$1',
       },
     },
     {
@@ -17,9 +18,11 @@ const config: Config = {
       preset: 'ts-jest',
       testEnvironment: 'node',
       rootDir: 'packages/backend',
+      setupFiles: ['<rootDir>/test/setup.ts'],
       moduleNameMapper: {
         '^@skaha-orc/shared$': '<rootDir>/../shared/src/index.ts',
         '^@skaha-orc/shared/(.*)$': '<rootDir>/../shared/src/$1',
+        '^(\\.{1,2}/.*)\\.js$': '$1',
       },
     },
     {
@@ -31,6 +34,7 @@ const config: Config = {
         '^@skaha-orc/shared$': '<rootDir>/../shared/src/index.ts',
         '^@skaha-orc/shared/(.*)$': '<rootDir>/../shared/src/$1',
         '^@/(.*)$': '<rootDir>/src/$1',
+        '^(\\.{1,2}/.*)\\.js$': '$1',
       },
       transform: {
         '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'packages/frontend/tsconfig.json' }],

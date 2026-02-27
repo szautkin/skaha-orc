@@ -85,6 +85,9 @@ export const api = {
       body: JSON.stringify({ serviceIds, dryRun: false }),
     }),
 
+  getConfigWarnings: (id: string) =>
+    request<{ warnings: string[] }>(`/services/${id}/config-warnings`),
+
   getPods: (id: string) =>
     request<{ pods: Array<{ name: string; status: string; ready: string; restarts: number }> }>(
       `/services/${id}/pods`,
@@ -113,6 +116,9 @@ export const api = {
     }),
 
   getHostIp: () => request<{ ip: string | null; hostname: string }>('/services/host-ip'),
+
+  getHostIps: () =>
+    request<{ ip: string; iface: string; virtual: boolean }[]>('/services/host-ips'),
 
   setHostIp: (ip: string) =>
     request<{ updated: number }>('/services/host-ip', {
@@ -145,6 +151,21 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ users }),
     }),
+
+  hashPassword: (password: string) =>
+    request<{ hash: string }>('/dex/hash-password', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
+
+  autoFix: (id: string) =>
+    request<{ fixes: string[] }>(`/services/${id}/auto-fix`, { method: 'POST' }),
+
+  runTests: (id: string) =>
+    request<{ results: Array<{ name: string; status: 'pass' | 'fail' | 'skip'; message: string; durationMs: number }> }>(
+      `/services/${id}/test`,
+      { method: 'POST' },
+    ),
 };
 
 export function createSSEStream(path: string, onMessage: (data: unknown) => void): () => void {

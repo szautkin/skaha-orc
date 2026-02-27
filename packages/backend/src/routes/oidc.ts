@@ -6,7 +6,7 @@ import { logger } from '../logger.js';
 
 const router = Router();
 
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+export function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const keys = path.split('.');
   let current: unknown = obj;
   for (const key of keys) {
@@ -16,7 +16,7 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
-function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {
+export function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {
   const keys = path.split('.');
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < keys.length - 1; i++) {
@@ -42,6 +42,7 @@ const OIDC_URI_PATHS: Record<string, string> = {
 const OIDC_CLIENT_PATHS: Record<string, string> = {
   'science-portal': 'deployment.sciencePortal.oidc',
   'storage-ui': 'deployment.storageUI.oidc',
+  skaha: 'deployment.skaha.oidc',
 };
 
 /**
@@ -141,7 +142,28 @@ router.get('/oidc/settings', async (_req, res) => {
       }
     }
 
-    const settings: PlatformOidcSettings = { issuerUri, sciencePortal, storageUi };
+    // Read skaha client config
+    let skaha = { ...emptyClient };
+    const skahaDef = SERVICE_CATALOG['skaha'];
+    if (skahaDef.valuesFile) {
+      try {
+        const config = await readValuesFile(skahaDef.valuesFile);
+        const oidc = getNestedValue(config, OIDC_CLIENT_PATHS['skaha']!) as Record<string, unknown> | undefined;
+        if (oidc) {
+          skaha = {
+            clientID: (oidc.clientID as string) ?? '',
+            clientSecret: (oidc.clientSecret as string) ?? '',
+            redirectURI: (oidc.redirectURI as string) ?? '',
+            callbackURI: (oidc.callbackURI as string) ?? '',
+            scope: (oidc.scope as string) ?? '',
+          };
+        }
+      } catch {
+        // use defaults
+      }
+    }
+
+    const settings: PlatformOidcSettings = { issuerUri, sciencePortal, storageUi, skaha };
     const response: ApiResponse<PlatformOidcSettings> = { success: true, data: settings };
     res.json(response);
   } catch (err) {
@@ -198,7 +220,7 @@ router.put('/oidc/settings', async (req, res) => {
     return;
   }
 
-  const { issuerUri, sciencePortal, storageUi } = parsed.data;
+  const { issuerUri, sciencePortal, storageUi, skaha } = parsed.data;
 
   try {
     let updated = 0;
@@ -218,39 +240,96 @@ router.put('/oidc/settings', async (req, res) => {
       }
     }
 
-    // Write full client config to science-portal
-    const spDef = SERVICE_CATALOG['science-portal'];
-    if (spDef.valuesFile) {
+    // Write full client config to each OIDC client service
+    const clientMap: Record<string, OidcClientConfig> = {
+      'science-portal': sciencePortal,
+      'storage-ui': storageUi,
+      skaha,
+    };
+    for (const [svcId, clientConfig] of Object.entries(clientMap)) {
+      const basePath = OIDC_CLIENT_PATHS[svcId];
+      if (!basePath) continue;
+      const def = SERVICE_CATALOG[svcId as keyof typeof SERVICE_CATALOG];
+      if (!def?.valuesFile) continue;
       try {
-        const config = await readValuesFile(spDef.valuesFile);
-        const basePath = OIDC_CLIENT_PATHS['science-portal'];
+        const config = await readValuesFile(def.valuesFile);
         setNestedValue(config, `${basePath}.uri`, issuerUri);
-        setNestedValue(config, `${basePath}.clientID`, sciencePortal.clientID);
-        setNestedValue(config, `${basePath}.clientSecret`, sciencePortal.clientSecret);
-        setNestedValue(config, `${basePath}.redirectURI`, sciencePortal.redirectURI);
-        setNestedValue(config, `${basePath}.callbackURI`, sciencePortal.callbackURI);
-        setNestedValue(config, `${basePath}.scope`, sciencePortal.scope);
-        await writeValuesFile(spDef.valuesFile, config);
+        setNestedValue(config, `${basePath}.clientID`, clientConfig.clientID);
+        setNestedValue(config, `${basePath}.clientSecret`, clientConfig.clientSecret);
+        setNestedValue(config, `${basePath}.redirectURI`, clientConfig.redirectURI);
+        setNestedValue(config, `${basePath}.callbackURI`, clientConfig.callbackURI);
+        setNestedValue(config, `${basePath}.scope`, clientConfig.scope);
+        await writeValuesFile(def.valuesFile, config);
       } catch {
-        logger.warn('Failed to update science-portal OIDC client config');
+        logger.warn({ svcId }, 'Failed to update OIDC client config');
       }
     }
 
-    // Write full client config to storage-ui
-    const suDef = SERVICE_CATALOG['storage-ui'];
-    if (suDef.valuesFile) {
+    // Sync full client state (secrets + redirect URIs) into Dex staticClients
+    const dexDef = SERVICE_CATALOG['dex'];
+    if (dexDef.valuesFile) {
       try {
-        const config = await readValuesFile(suDef.valuesFile);
-        const basePath = OIDC_CLIENT_PATHS['storage-ui'];
-        setNestedValue(config, `${basePath}.uri`, issuerUri);
-        setNestedValue(config, `${basePath}.clientID`, storageUi.clientID);
-        setNestedValue(config, `${basePath}.clientSecret`, storageUi.clientSecret);
-        setNestedValue(config, `${basePath}.redirectURI`, storageUi.redirectURI);
-        setNestedValue(config, `${basePath}.callbackURI`, storageUi.callbackURI);
-        setNestedValue(config, `${basePath}.scope`, storageUi.scope);
-        await writeValuesFile(suDef.valuesFile, config);
+        const config = await readValuesFile(dexDef.valuesFile);
+        const clients = (config.staticClients ?? []) as
+          Array<{ id: string; secret: string; name?: string; redirectURIs?: string[]; [k: string]: unknown }>;
+
+        const desiredClients = [
+          {
+            id: sciencePortal.clientID,
+            secret: sciencePortal.clientSecret,
+            name: 'Science Portal',
+            redirectURIs: [sciencePortal.redirectURI],
+          },
+          {
+            id: storageUi.clientID,
+            secret: storageUi.clientSecret,
+            name: 'Storage UI',
+            redirectURIs: [storageUi.redirectURI],
+          },
+          {
+            id: skaha.clientID,
+            secret: skaha.clientSecret,
+            name: 'Skaha',
+            redirectURIs: [skaha.redirectURI, skaha.callbackURI].filter(Boolean),
+          },
+        ];
+
+        for (const desired of desiredClients) {
+          if (!desired.id) continue;
+          const existing = clients.find((c) => c.id === desired.id);
+          if (existing) {
+            existing.secret = desired.secret;
+            existing.name = desired.name;
+            existing.redirectURIs = desired.redirectURIs;
+          } else {
+            clients.push(desired);
+          }
+        }
+
+        // Also sync DEX issuer
+        config.staticClients = clients;
+        config.issuer = issuerUri;
+        await writeValuesFile(dexDef.valuesFile, config);
+        updated++;
       } catch {
-        logger.warn('Failed to update storage-ui OIDC client config');
+        logger.warn('Failed to sync clients to dex-values.yaml');
+      }
+    }
+
+    // Set cavern identityManagerClass to StandardIdentityManager for token-based auth
+    const cavernDef = SERVICE_CATALOG['cavern'];
+    if (cavernDef.valuesFile) {
+      try {
+        const config = await readValuesFile(cavernDef.valuesFile);
+        const current = getNestedValue(config, 'deployment.cavern.identityManagerClass');
+        if (current !== 'org.opencadc.auth.StandardIdentityManager') {
+          setNestedValue(config, 'deployment.cavern.identityManagerClass',
+            'org.opencadc.auth.StandardIdentityManager');
+          await writeValuesFile(cavernDef.valuesFile, config);
+          updated++;
+        }
+      } catch {
+        logger.warn('Failed to set cavern identityManagerClass');
       }
     }
 

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { Loader2, Wand2 } from 'lucide-react';
+import { Loader2, Wand2, KeyRound } from 'lucide-react';
 import type { PlatformOidcSettings } from '@skaha-orc/shared';
 import { PLATFORM_HOSTNAME } from '@skaha-orc/shared';
 import { useOidcSettings, useSaveOidcSettings } from '@/hooks/use-oidc';
@@ -8,10 +8,19 @@ import { toast } from 'sonner';
 
 type OidcProvider = 'dex' | 'keycloak';
 
+function generateSecret(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/=+$/, '') + '=1';
+}
+
+const emptyClient = { clientID: '', clientSecret: '', redirectURI: '', callbackURI: '', scope: '' };
+
 const emptySettings: PlatformOidcSettings = {
   issuerUri: '',
-  sciencePortal: { clientID: '', clientSecret: '', redirectURI: '', callbackURI: '', scope: '' },
-  storageUi: { clientID: '', clientSecret: '', redirectURI: '', callbackURI: '', scope: '' },
+  sciencePortal: { ...emptyClient },
+  storageUi: { ...emptyClient },
+  skaha: { ...emptyClient },
 };
 
 export function OidcSettingsPanel() {
@@ -41,29 +50,30 @@ export function OidcSettingsPanel() {
 
     if (provider === 'dex') {
       setValue('issuerUri', `https://${host}/dex`, { shouldDirty: true });
-      setValue('sciencePortal.clientID', 'science-portal', { shouldDirty: true });
-      setValue('sciencePortal.clientSecret', 'science-portal-secret', { shouldDirty: true });
-      setValue('sciencePortal.redirectURI', `https://${host}/science-portal/oidc-redirect`, { shouldDirty: true });
-      setValue('sciencePortal.callbackURI', `https://${host}/science-portal/oidc-callback`, { shouldDirty: true });
-      setValue('sciencePortal.scope', 'openid profile email', { shouldDirty: true });
-      setValue('storageUi.clientID', 'storage-ui', { shouldDirty: true });
-      setValue('storageUi.clientSecret', 'storage-ui-secret', { shouldDirty: true });
-      setValue('storageUi.redirectURI', `https://${host}/storage/oidc-redirect`, { shouldDirty: true });
-      setValue('storageUi.callbackURI', `https://${host}/storage/oidc-callback`, { shouldDirty: true });
-      setValue('storageUi.scope', 'openid profile email', { shouldDirty: true });
     } else {
       setValue('issuerUri', `https://${host}/auth/realms/skaha`, { shouldDirty: true });
-      setValue('sciencePortal.clientID', 'science-portal', { shouldDirty: true });
-      setValue('sciencePortal.clientSecret', '', { shouldDirty: true });
-      setValue('sciencePortal.redirectURI', `https://${host}/science-portal/oidc-redirect`, { shouldDirty: true });
-      setValue('sciencePortal.callbackURI', `https://${host}/science-portal/oidc-callback`, { shouldDirty: true });
-      setValue('sciencePortal.scope', 'openid profile email', { shouldDirty: true });
-      setValue('storageUi.clientID', 'storage-ui', { shouldDirty: true });
-      setValue('storageUi.clientSecret', '', { shouldDirty: true });
-      setValue('storageUi.redirectURI', `https://${host}/storage/oidc-redirect`, { shouldDirty: true });
-      setValue('storageUi.callbackURI', `https://${host}/storage/oidc-callback`, { shouldDirty: true });
-      setValue('storageUi.scope', 'openid profile email', { shouldDirty: true });
     }
+
+    // Science Portal: redirectURI = Java OIDC callback handler, callbackURI = base service path
+    setValue('sciencePortal.clientID', 'science-portal', { shouldDirty: true });
+    setValue('sciencePortal.clientSecret', provider === 'dex' ? generateSecret() : '', { shouldDirty: true });
+    setValue('sciencePortal.redirectURI', `https://${host}/science-portal/oidc-callback`, { shouldDirty: true });
+    setValue('sciencePortal.callbackURI', `https://${host}/science-portal`, { shouldDirty: true });
+    setValue('sciencePortal.scope', 'openid profile offline_access', { shouldDirty: true });
+
+    // Storage UI
+    setValue('storageUi.clientID', 'storage-ui', { shouldDirty: true });
+    setValue('storageUi.clientSecret', provider === 'dex' ? generateSecret() : '', { shouldDirty: true });
+    setValue('storageUi.redirectURI', `https://${host}/storage/oidc-callback`, { shouldDirty: true });
+    setValue('storageUi.callbackURI', `https://${host}/storage`, { shouldDirty: true });
+    setValue('storageUi.scope', 'openid profile offline_access', { shouldDirty: true });
+
+    // Skaha
+    setValue('skaha.clientID', 'skaha', { shouldDirty: true });
+    setValue('skaha.clientSecret', provider === 'dex' ? generateSecret() : '', { shouldDirty: true });
+    setValue('skaha.redirectURI', `https://${host}/skaha`, { shouldDirty: true });
+    setValue('skaha.callbackURI', `https://${host}/skaha/oidc-callback`, { shouldDirty: true });
+    setValue('skaha.scope', 'openid profile offline_access', { shouldDirty: true });
   };
 
   if (isLoading) {
@@ -76,6 +86,23 @@ export function OidcSettingsPanel() {
 
   const inputClass = 'w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-congress-blue focus:border-congress-blue';
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
+
+  const secretField = (name: 'sciencePortal.clientSecret' | 'storageUi.clientSecret' | 'skaha.clientSecret') => (
+    <div>
+      <label className={labelClass}>Client Secret</label>
+      <div className="flex gap-1.5">
+        <input {...register(name)} type="password" className={inputClass} />
+        <button
+          type="button"
+          onClick={() => setValue(name, generateSecret(), { shouldDirty: true })}
+          className="flex items-center gap-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs text-gray-600 hover:bg-gray-50 transition-colors whitespace-nowrap"
+          title="Generate random secret"
+        >
+          <KeyRound className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
@@ -94,10 +121,7 @@ export function OidcSettingsPanel() {
             <label className={labelClass}>Client ID</label>
             <input {...register('sciencePortal.clientID')} className={inputClass} />
           </div>
-          <div>
-            <label className={labelClass}>Client Secret</label>
-            <input {...register('sciencePortal.clientSecret')} type="password" className={inputClass} />
-          </div>
+          {secretField('sciencePortal.clientSecret')}
           <div>
             <label className={labelClass}>Redirect URI</label>
             <input {...register('sciencePortal.redirectURI')} className={inputClass} />
@@ -121,10 +145,7 @@ export function OidcSettingsPanel() {
             <label className={labelClass}>Client ID</label>
             <input {...register('storageUi.clientID')} className={inputClass} />
           </div>
-          <div>
-            <label className={labelClass}>Client Secret</label>
-            <input {...register('storageUi.clientSecret')} type="password" className={inputClass} />
-          </div>
+          {secretField('storageUi.clientSecret')}
           <div>
             <label className={labelClass}>Redirect URI</label>
             <input {...register('storageUi.redirectURI')} className={inputClass} />
@@ -136,6 +157,30 @@ export function OidcSettingsPanel() {
           <div className="col-span-2">
             <label className={labelClass}>Scope</label>
             <input {...register('storageUi.scope')} className={inputClass} />
+          </div>
+        </div>
+      </fieldset>
+
+      {/* Skaha */}
+      <fieldset className="border border-gray-200 rounded-lg p-4">
+        <legend className="text-sm font-semibold text-gray-900 px-2">Skaha Client</legend>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Client ID</label>
+            <input {...register('skaha.clientID')} className={inputClass} />
+          </div>
+          {secretField('skaha.clientSecret')}
+          <div>
+            <label className={labelClass}>Redirect URI</label>
+            <input {...register('skaha.redirectURI')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Callback URI</label>
+            <input {...register('skaha.callbackURI')} className={inputClass} />
+          </div>
+          <div className="col-span-2">
+            <label className={labelClass}>Scope</label>
+            <input {...register('skaha.scope')} className={inputClass} />
           </div>
         </div>
       </fieldset>

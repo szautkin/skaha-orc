@@ -1,0 +1,9 @@
+# Volumes — example values
+# PersistentVolume and PersistentVolumeClaim definitions
+
+cavern:
+  storageClassName: ""
+  capacity: 100Gi
+  nfs:
+    server: your-nfs-server.example.com
+    path: /data/cavern

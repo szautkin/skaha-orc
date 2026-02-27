@@ -169,6 +169,13 @@ export function useHostIp() {
   });
 }
 
+export function useHostIps() {
+  return useQuery({
+    queryKey: ['host-ips'],
+    queryFn: api.getHostIps,
+  });
+}
+
 export function useSetHostIp() {
   const queryClient = useQueryClient();
 

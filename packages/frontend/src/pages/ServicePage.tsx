@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useState, useMemo } from 'react';
+import { useParams, Navigate, Link } from 'react-router-dom';
 import {
   Play,
   Pause,
@@ -11,19 +11,34 @@ import {
   Terminal,
   Shield,
   ExternalLink,
+  AlertTriangle,
+  Lock,
+  Wrench,
+  FlaskConical,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
-import type { ServiceId } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME } from '@skaha-orc/shared';
+import type { ServiceId, DeploymentPhase } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME, getUnmetDependencies } from '@skaha-orc/shared';
 import { useDeploy, useUninstall, usePause, useResume } from '@/hooks/use-services';
-import { useServiceLive } from '@/hooks/use-services-live';
+import { useServiceLive, useServicesLive } from '@/hooks/use-services-live';
+import { useConfigWarnings } from '@/hooks/use-config-warnings';
 import { StatusBadge } from '@/components/service/StatusBadge';
 import { ConfigForm } from '@/components/service/ConfigForm';
 import { CertPanel } from '@/components/service/CertPanel';
 import { CaManager } from '@/components/certs/CaManager';
 import { PodList } from '@/components/kubernetes/PodList';
 import { PodLogViewer } from '@/components/kubernetes/PodLogViewer';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+
+interface TestResult {
+  name: string;
+  status: 'pass' | 'fail' | 'skip';
+  message: string;
+  durationMs: number;
+}
 
 type TabId = 'config' | 'status' | 'pods' | 'certs';
 
@@ -45,10 +60,23 @@ export function ServicePage() {
   const [selectedPod, setSelectedPod] = useState<string | null>(null);
 
   const { data: service, isLoading } = useServiceLive(serviceId);
+  const { data: allServices } = useServicesLive();
+  const configWarnings = useConfigWarnings(serviceId);
   const deploy = useDeploy(serviceId);
   const uninstall = useUninstall(serviceId);
   const pause = usePause(serviceId);
   const resume = useResume(serviceId);
+  const [fixing, setFixing] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResults, setTestResults] = useState<TestResult[] | null>(null);
+
+  const unmetDeps = useMemo(() => {
+    if (!allServices) return [];
+    const phaseMap = new Map<ServiceId, DeploymentPhase>(
+      allServices.map((s) => [s.id, s.status.phase]),
+    );
+    return getUnmetDependencies(serviceId, phaseMap);
+  }, [serviceId, allServices]);
 
   if (serviceId === 'haproxy') {
     return <Navigate to="/haproxy" replace />;
@@ -60,6 +88,8 @@ export function ServicePage() {
 
   const def = SERVICE_CATALOG[serviceId];
   const anyBusy = deploy.isPending || uninstall.isPending || pause.isPending || resume.isPending;
+  const isBlocked = unmetDeps.length > 0;
+  const warnings = configWarnings.data?.warnings ?? [];
 
   if (isLoading) {
     return (
@@ -71,6 +101,68 @@ export function ServicePage() {
 
   return (
     <div className="space-y-6">
+      {/* Dependency warning */}
+      {isBlocked && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-buttercup-yellow rounded-md p-3 text-sm text-amber-800">
+          <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>
+            Cannot deploy — requires:{' '}
+            {unmetDeps.map((dep, i) => (
+              <span key={dep.id}>
+                {i > 0 && ', '}
+                <Link
+                  to={`/services/${dep.id}`}
+                  className="font-medium underline hover:text-amber-900"
+                >
+                  {dep.name}
+                </Link>
+              </span>
+            ))}{' '}
+            (not yet deployed)
+          </span>
+        </div>
+      )}
+
+      {/* Config warnings */}
+      {warnings.length > 0 && (
+        <div className="bg-amber-50 border border-buttercup-yellow rounded-md p-3 text-sm text-amber-800">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              Configuration warnings:
+            </div>
+            <button
+              onClick={async () => {
+                setFixing(true);
+                try {
+                  const { fixes } = await api.autoFix(serviceId);
+                  if (fixes.length > 0) {
+                    toast.success(`Applied ${fixes.length} fix(es)`);
+                    void configWarnings.refetch();
+                  } else {
+                    toast.info('No auto-fixable issues found');
+                  }
+                } catch (err) {
+                  toast.error(`Auto-fix failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                } finally {
+                  setFixing(false);
+                }
+              }}
+              disabled={fixing}
+              className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-900 transition-colors disabled:opacity-50"
+            >
+              {fixing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+              Fix automatically
+            </button>
+          </div>
+          <ul className="list-disc pl-8 space-y-0.5">
+            {warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -98,17 +190,29 @@ export function ServicePage() {
 
         <div className="flex items-center gap-2">
           <button
-            className="flex items-center gap-1.5 bg-congress-blue text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-prussian-blue transition-colors disabled:opacity-50"
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50',
+              isBlocked
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-congress-blue text-white hover:bg-prussian-blue',
+            )}
             onClick={() =>
               deploy.mutate(false, {
                 onSuccess: () => toast.success(`${def.name} deployed`),
                 onError: (err) => toast.error(`Deploy failed: ${err.message}`),
               })
             }
-            disabled={anyBusy}
+            disabled={anyBusy || isBlocked}
+            title={
+              isBlocked
+                ? `Requires: ${unmetDeps.map((d) => d.name).join(', ')} (not deployed)`
+                : undefined
+            }
           >
             {deploy.isPending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : isBlocked ? (
+              <Lock className="w-3.5 h-3.5" />
             ) : (
               <Play className="w-3.5 h-3.5" />
             )}
@@ -168,8 +272,62 @@ export function ServicePage() {
             )}
             Uninstall
           </button>
+
+          <button
+            className="flex items-center gap-1.5 border border-congress-blue text-congress-blue px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50"
+            onClick={async () => {
+              setTesting(true);
+              setTestResults(null);
+              try {
+                const { results } = await api.runTests(serviceId);
+                setTestResults(results);
+                const passed = results.filter((r) => r.status === 'pass').length;
+                const failed = results.filter((r) => r.status === 'fail').length;
+                if (failed === 0) {
+                  toast.success(`All ${passed} test(s) passed`);
+                } else {
+                  toast.error(`${failed} test(s) failed, ${passed} passed`);
+                }
+              } catch (err) {
+                toast.error(`Tests failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+              } finally {
+                setTesting(false);
+              }
+            }}
+            disabled={anyBusy || testing}
+          >
+            {testing ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FlaskConical className="w-3.5 h-3.5" />
+            )}
+            Run Tests
+          </button>
         </div>
       </div>
+
+      {/* Test Results */}
+      {testResults && testResults.length > 0 && (
+        <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm">
+          <h4 className="font-medium text-gray-900 mb-2">Test Results</h4>
+          <div className="space-y-1">
+            {testResults.map((r) => (
+              <div key={r.name} className="flex items-center gap-2">
+                {r.status === 'pass' ? (
+                  <CheckCircle2 className="w-4 h-4 text-success-green flex-shrink-0" />
+                ) : r.status === 'fail' ? (
+                  <XCircle className="w-4 h-4 text-tall-poppy-red flex-shrink-0" />
+                ) : (
+                  <span className="w-4 h-4 rounded-full bg-gray-300 flex-shrink-0 inline-block" />
+                )}
+                <span className="font-medium">{r.name}</span>
+                <span className="text-neutral-gray">{r.message}</span>
+                <span className="text-xs text-neutral-gray ml-auto">{r.durationMs}ms</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-gray-200">

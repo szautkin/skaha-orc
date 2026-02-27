@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      containers:
+        - name: dex
+          image: "ghcr.io/dexidp/dex:v{{ .Chart.AppVersion }}"
+          ports:
+            - containerPort: 5556
+              name: http
+          command:
+            - /usr/local/bin/dex
+            - serve
+            - /etc/dex/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex
+            - name: data
+              mountPath: /var/dex
+      volumes:
+        - name: config
+          configMap:
+            name: dex-config
+        - name: data
+          emptyDir: {}

@@ -70,6 +70,80 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
       ],
     },
   ],
+  volumes: [
+    {
+      title: 'Cavern Storage',
+      fields: [
+        {
+          name: 'storageClassName',
+          label: 'Storage Class',
+          type: 'text',
+          path: 'cavern.storageClassName',
+          placeholder: 'Leave empty for default',
+        },
+        { name: 'capacity', label: 'Capacity', type: 'text', path: 'cavern.capacity' },
+        {
+          name: 'hostPath',
+          label: 'Host Path (local dev)',
+          type: 'text',
+          path: 'cavern.hostPath',
+          placeholder: '/var/lib/k8s-pvs/science-platform',
+        },
+        {
+          name: 'nfsServer',
+          label: 'NFS Server (production)',
+          type: 'text',
+          path: 'cavern.nfs.server',
+          placeholder: 'Leave empty to use Host Path',
+        },
+        { name: 'nfsPath', label: 'NFS Path', type: 'text', path: 'cavern.nfs.path' },
+      ],
+    },
+  ],
+  'posix-mapper-db': [
+    {
+      title: 'PostgreSQL',
+      fields: [
+        { name: 'pgImage', label: 'Postgres Image', type: 'text', path: 'postgres.image' },
+        {
+          name: 'pgUser',
+          label: 'Username',
+          type: 'text',
+          path: 'postgres.auth.username',
+        },
+        {
+          name: 'pgPass',
+          label: 'Password',
+          type: 'password',
+          path: 'postgres.auth.password',
+        },
+        {
+          name: 'pgDb',
+          label: 'Database',
+          type: 'text',
+          path: 'postgres.auth.database',
+        },
+        {
+          name: 'pgSchema',
+          label: 'Schema',
+          type: 'text',
+          path: 'postgres.auth.schema',
+        },
+      ],
+    },
+    {
+      title: 'Storage',
+      fields: [
+        {
+          name: 'storageSize',
+          label: 'Storage Size',
+          type: 'text',
+          path: 'postgres.storage.spec.resources.requests.storage',
+        },
+      ],
+    },
+    extraHostsSection,
+  ],
   'posix-mapper': [
     {
       title: 'Identity',
@@ -234,6 +308,60 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
       ],
     },
     {
+      title: 'User Storage',
+      fields: [
+        {
+          name: 'topLevelDirectory',
+          label: 'Top Level Directory',
+          type: 'text',
+          path: 'deployment.skaha.sessions.userStorage.topLevelDirectory',
+          placeholder: '/cavern',
+        },
+        {
+          name: 'homeDirectory',
+          label: 'Home Directory',
+          type: 'text',
+          path: 'deployment.skaha.sessions.userStorage.homeDirectory',
+          placeholder: 'home',
+        },
+        {
+          name: 'projectsDirectory',
+          label: 'Projects Directory',
+          type: 'text',
+          path: 'deployment.skaha.sessions.userStorage.projectsDirectory',
+          placeholder: 'projects',
+        },
+        {
+          name: 'userStoragePvc',
+          label: 'PVC Name (workload)',
+          type: 'text',
+          path: 'deployment.skaha.sessions.userStorage.persistentVolumeClaimName',
+          placeholder: 'skaha-workload-cavern-pvc',
+        },
+        {
+          name: 'serviceURI',
+          label: 'Cavern Service URI',
+          type: 'text',
+          path: 'deployment.skaha.sessions.userStorage.serviceURI',
+          placeholder: 'ivo://cadc.nrc.ca/cavern',
+        },
+        {
+          name: 'nodeURIPrefix',
+          label: 'Cavern Node URI Prefix',
+          type: 'text',
+          path: 'deployment.skaha.sessions.userStorage.nodeURIPrefix',
+          placeholder: 'vos://cadc.nrc.ca~cavern',
+        },
+        {
+          name: 'adminApiKey',
+          label: 'Admin API Key (Cavern auth)',
+          type: 'password',
+          path: 'deployment.skaha.sessions.userStorage.admin.auth.apiKey',
+          placeholder: 'Auto-generated on startup',
+        },
+      ],
+    },
+    {
       title: 'Storage',
       fields: [
         {
@@ -379,6 +507,25 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           type: 'text',
           path: 'deployment.cavern.filesystem.subPath',
         },
+        {
+          name: 'rootOwnerUsername',
+          label: 'Root Owner Username',
+          type: 'text',
+          path: 'deployment.cavern.filesystem.rootOwner.username',
+          placeholder: 'root',
+        },
+        {
+          name: 'rootOwnerUid',
+          label: 'Root Owner UID',
+          type: 'number',
+          path: 'deployment.cavern.filesystem.rootOwner.uid',
+        },
+        {
+          name: 'rootOwnerGid',
+          label: 'Root Owner GID',
+          type: 'number',
+          path: 'deployment.cavern.filesystem.rootOwner.gid',
+        },
       ],
     },
     {
@@ -407,6 +554,18 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           label: 'Password',
           type: 'password',
           path: 'deployment.cavern.uws.db.password',
+        },
+      ],
+    },
+    {
+      title: 'Storage',
+      fields: [
+        {
+          name: 'pvcClaimName',
+          label: 'PVC Claim Name',
+          type: 'text',
+          path: 'storage.service.spec.persistentVolumeClaim.claimName',
+          placeholder: 'skaha-pvc',
         },
       ],
     },
@@ -473,6 +632,55 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
       fields: commonResources('deployment.storageUI'),
     },
     extraHostsSection,
+  ],
+  reg: [
+    {
+      title: 'Registry',
+      fields: [
+        {
+          name: 'hostname',
+          label: 'Platform Hostname',
+          type: 'text',
+          path: 'global.hostname',
+        },
+        {
+          name: 'authority',
+          label: 'Authority (IVOA identifier)',
+          type: 'text',
+          path: 'application.authority',
+          placeholder: 'ivo://cadc.nrc.ca/reg',
+        },
+      ],
+    },
+    {
+      title: 'Service Entries',
+      fields: [
+        {
+          name: 'serviceEntries',
+          label: 'Resource Capabilities',
+          type: 'service-entries',
+          path: 'application.serviceEntries',
+        },
+      ],
+    },
+    {
+      title: 'Ingress',
+      fields: [
+        {
+          name: 'ingressEnabled',
+          label: 'Enable Ingress',
+          type: 'boolean',
+          path: 'ingress.enabled',
+        },
+        {
+          name: 'ingressClass',
+          label: 'Ingress Class',
+          type: 'text',
+          path: 'ingress.className',
+          placeholder: 'base-traefik',
+        },
+      ],
+    },
   ],
   keycloak: [
     {

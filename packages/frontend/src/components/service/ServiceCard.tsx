@@ -1,25 +1,61 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, RotateCcw, Square, Server, ExternalLink } from 'lucide-react';
-import type { ServiceWithStatus } from '@skaha-orc/shared';
-import { PLATFORM_HOSTNAME } from '@skaha-orc/shared';
+import { Play, Pause, RotateCcw, Square, Server, ExternalLink, Lock, AlertTriangle } from 'lucide-react';
+import type { ServiceWithStatus, ServiceId, DeploymentPhase, ReadinessLevel } from '@skaha-orc/shared';
+import { PLATFORM_HOSTNAME, getUnmetDependencies } from '@skaha-orc/shared';
 import { StatusBadge } from './StatusBadge';
+import { ReadinessDot } from './ReadinessDot';
 import { useDeploy, usePause, useResume, useUninstall } from '@/hooks/use-services';
+import { useConfigWarnings } from '@/hooks/use-config-warnings';
 import { toast } from 'sonner';
 
 interface ServiceCardProps {
   service: ServiceWithStatus;
+  allServices: ServiceWithStatus[];
 }
 
-export function ServiceCard({ service }: ServiceCardProps) {
+export function ServiceCard({ service, allServices }: ServiceCardProps) {
   const navigate = useNavigate();
   const deploy = useDeploy(service.id);
   const pause = usePause(service.id);
   const resume = useResume(service.id);
   const uninstall = useUninstall(service.id);
+  const configWarnings = useConfigWarnings(service.id);
 
   const phase = service.status.phase;
   const isRunning = phase === 'deployed' || phase === 'healthy' || phase === 'waiting_ready';
   const isPaused = phase === 'paused';
+
+  const unmetDeps = useMemo(() => {
+    const phaseMap = new Map<ServiceId, DeploymentPhase>(
+      allServices.map((s) => [s.id, s.status.phase]),
+    );
+    return getUnmetDependencies(service.id, phaseMap);
+  }, [service.id, allServices]);
+
+  const hasWarnings = (configWarnings.data?.warnings.length ?? 0) > 0;
+  const isBlocked = unmetDeps.length > 0;
+
+  const readiness: ReadinessLevel = useMemo(() => {
+    if (isBlocked) return 'blocked';
+    if (phase === 'failed') return 'failed';
+    if (phase === 'not_installed' || phase === 'pending') {
+      return hasWarnings ? 'warnings' : 'idle';
+    }
+    if (phase === 'healthy' && !hasWarnings) return 'healthy';
+    if (isRunning && !hasWarnings) return 'deployed';
+    if (hasWarnings) return 'warnings';
+    return 'idle';
+  }, [phase, isBlocked, hasWarnings, isRunning]);
+
+  const readinessTooltip = useMemo(() => {
+    if (isBlocked) return `Requires: ${unmetDeps.map((d) => d.name).join(', ')} (not deployed)`;
+    if (phase === 'failed') return 'Deployment failed';
+    if (phase === 'healthy' && !hasWarnings) return 'Healthy';
+    if (isRunning && !hasWarnings) return 'Deployed';
+    if (hasWarnings) return `${configWarnings.data?.warnings.length ?? 0} config warning(s)`;
+    return 'Ready to deploy';
+  }, [phase, isBlocked, hasWarnings, isRunning, unmetDeps, configWarnings.data]);
 
   return (
     <div
@@ -28,8 +64,14 @@ export function ServiceCard({ service }: ServiceCardProps) {
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
+          <ReadinessDot level={readiness} tooltip={readinessTooltip} />
           <Server className="w-4 h-4 text-congress-blue" />
           <h3 className="font-medium text-sm">{service.name}</h3>
+          {hasWarnings && (
+            <span title={`Config has ${configWarnings.data!.warnings.length} placeholder value(s)`}>
+              <AlertTriangle className="w-3.5 h-3.5 text-buttercup-yellow" />
+            </span>
+          )}
         </div>
         <StatusBadge phase={phase} />
       </div>
@@ -49,17 +91,27 @@ export function ServiceCard({ service }: ServiceCardProps) {
         <div className="flex items-center gap-3">
           {!isRunning && !isPaused && (
             <button
-              className="flex items-center gap-1.5 text-xs font-medium text-congress-blue hover:text-prussian-blue transition-colors"
+              className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                isBlocked
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-congress-blue hover:text-prussian-blue'
+              }`}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isBlocked) return;
                 deploy.mutate(false, {
                   onSuccess: () => toast.success(`${service.name} deployed`),
                   onError: (err) => toast.error(`Deploy failed: ${err.message}`),
                 });
               }}
-              disabled={deploy.isPending}
+              disabled={deploy.isPending || isBlocked}
+              title={
+                isBlocked
+                  ? `Requires: ${unmetDeps.map((d) => d.name).join(', ')} (not deployed)`
+                  : undefined
+              }
             >
-              <Play className="w-3 h-3" />
+              {isBlocked ? <Lock className="w-3 h-3" /> : <Play className="w-3 h-3" />}
               {deploy.isPending ? 'Deploying...' : 'Deploy'}
             </button>
           )}

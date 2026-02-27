@@ -17,12 +17,16 @@ Where `opencadc/deployments` provides CI/CD automation and chart publishing, Ska
 
 ## Features
 
-- **Dashboard** — real-time service status, pod health, and deployment phases at a glance
+- **Dashboard** — real-time service status, pod health, and deployment phases at a glance, grouped by service tier
 - **Dependency graph** — visual DAG of service relationships with topological deploy ordering
 - **Helm values editing** — per-service config forms with live YAML validation and type-safe fields
 - **ExtraHosts management** — bulk IP/hostname override editing across all services
 - **Certificate lifecycle** — generate CAs, sign certs, view expiry, renew — all from the UI
 - **HAProxy orchestration** — generate, test, deploy, reload, and monitor HAProxy (Kubernetes, Docker, or process mode)
+- **OIDC settings** — propagate issuer URI and client configs across all services from a single panel
+- **Dex user management** — manage static passwords for the Dex identity provider
+- **Deployment profiles** — standard, production, minimal, and full presets for one-click deploy
+- **Service tiers** — core / recommended / site categorization with tier-based dashboard grouping
 - **Context switching** — switch kubectl contexts at runtime for multi-cluster management
 - **Setup wizard** — interactive `npm run setup` creates `.env`, directories, copies example values, and checks CLI prerequisites
 - **Bootstrap preflight** — on startup, the frontend shows a checklist of missing prerequisites
@@ -41,22 +45,49 @@ packages/
 
 ## Service Catalog
 
-The platform manages 12 services deployed in dependency order:
+The platform manages 13 services deployed in dependency order across three tiers:
 
-| # | Service | Description | Namespace | Optional |
-|---|---------|-------------|-----------|----------|
-| 1 | **base** | Traefik ingress controller, TLS, and namespaces | default | No |
-| 2 | **haproxy** | Reverse proxy and load balancer | skaha-system | No |
-| 3 | **reg** | IVOA Registry service (nginx) | skaha-system | No |
-| 4 | **volumes** | PersistentVolume + PVC resources | skaha-system | No |
-| 5 | **posix-mapper-db** | Standalone PostgreSQL for posix-mapper | skaha-system | No |
-| 6 | **posix-mapper** | UID/GID mapping service with PostgreSQL | skaha-system | No |
-| 7 | **mock-ac** | Mock access-control service for development | skaha-system | Yes |
-| 8 | **skaha** | Session management service with Redis | skaha-system | No |
-| 9 | **cavern** | VOSpace storage service with PostgreSQL UWS | skaha-system | No |
-| 10 | **science-portal** | Web UI for launching sessions (OIDC + Redis) | skaha-system | No |
-| 11 | **storage-ui** | Storage browser with OIDC and Redis | skaha-system | No |
-| 12 | **doi** | DOI minting service | skaha-system | Yes |
+| # | Service | Tier | Description | Namespace |
+|---|---------|------|-------------|-----------|
+| 1 | **base** | core | Traefik ingress controller, TLS, and namespaces | default |
+| 2 | **reg** | core | IVOA Registry service (nginx) | skaha-system |
+| 3 | **volumes** | core | PersistentVolume + PVC resources | skaha-system |
+| 4 | **posix-mapper-db** | core | Standalone PostgreSQL for posix-mapper | skaha-system |
+| 5 | **posix-mapper** | core | UID/GID mapping service with PostgreSQL | skaha-system |
+| 6 | **skaha** | core | Session management service with Redis | skaha-system |
+| 7 | **cavern** | recommended | VOSpace storage service with PostgreSQL UWS | skaha-system |
+| 8 | **science-portal** | recommended | Web UI for launching sessions (OIDC + Redis) | skaha-system |
+| 9 | **storage-ui** | recommended | Storage browser with OIDC and Redis | skaha-system |
+| 10 | **haproxy** | site | Reverse proxy and load balancer | skaha-system |
+| 11 | **doi** | site | DOI minting service | skaha-system |
+| 12 | **dex** | site | Lightweight OIDC provider with static passwords (dev/demo) | skaha-system |
+| 13 | **keycloak** | site | Full-featured OIDC identity provider with admin console | skaha-system |
+
+### Service Tiers
+
+| Tier | Description | Services |
+|------|-------------|----------|
+| **Core** | Required infrastructure — always deployed | base, reg, volumes, posix-mapper-db, posix-mapper, skaha |
+| **Recommended** | Standard user-facing services | cavern, science-portal, storage-ui |
+| **Site** | Site-specific or optional services | haproxy, doi, dex, keycloak |
+
+### Deployment Profiles
+
+| Profile | Description | Includes |
+|---------|-------------|----------|
+| **Standard** (Dev/Demo) | Core + recommended + HAProxy + Dex | Quick setup with static passwords |
+| **Production** | Core + recommended + HAProxy + Keycloak | Full IdP with admin console |
+| **Minimal** | Core infrastructure only | 6 core services |
+| **Full** | All 13 services | Includes both Dex and Keycloak |
+
+### Identity Providers
+
+Skaha-Orc supports two OIDC identity providers:
+
+- **Dex** — lightweight provider with static passwords, ideal for development and demo environments. Manage users directly from the UI.
+- **Keycloak** — full-featured IdP with admin console, federation, and enterprise SSO. Recommended for production.
+
+Choose between them via deployment profiles or by selecting individual services.
 
 ### Dependency Graph
 
@@ -72,12 +103,9 @@ base (Traefik, namespaces)
   │                       ├─> storage-ui (Storage browser + Redis + OIDC)
   │                       └─> doi (optional, DOI minting)
   ├─> volumes (PV + PVC)
-  └─> mock-ac (optional, dev access-control)
+  ├─> dex (lightweight OIDC, dev/demo)
+  └─> keycloak (full OIDC, production)
 ```
-
-### Deploy Order
-
-base -> haproxy -> reg -> volumes -> posix-mapper-db -> posix-mapper -> mock-ac -> skaha -> cavern -> science-portal -> storage-ui -> doi
 
 ## Prerequisites
 
@@ -129,11 +157,12 @@ npm run build         # Build all packages
 npm run typecheck     # Type-check all packages
 npm run lint          # Lint all packages
 npm run format        # Format code with Prettier
+npm test              # Run all tests (shared + backend + frontend)
 ```
 
 ## API Documentation
 
-Interactive API docs are available at **`/api/docs`** (Swagger UI) when the backend is running. All 40 endpoints are documented across 6 tags: Health, Services, Deployment, Kubernetes, Certificates, and HAProxy.
+Interactive API docs are available at **`/api/docs`** (Swagger UI) when the backend is running. All endpoints are documented across 8 tags: Health, Services, Deployment, Kubernetes, Certificates, HAProxy, OIDC, and Dex.
 
 ## Docker
 

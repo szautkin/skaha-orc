@@ -1,0 +1,20 @@
+# POSIX Mapper PostgreSQL — example values
+
+deployment:
+  extraHosts:
+    - ip: "10.0.0.1"
+      hostname: haproxy.cadc.dao.nrc.ca
+
+postgres:
+  image: postgres:14
+  auth:
+    username: posixmapper
+    password: CHANGE_ME
+    database: posixmapper
+    schema: mapping
+  storage:
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 1Gi

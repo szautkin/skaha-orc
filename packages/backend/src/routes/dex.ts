@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
 import type { ApiResponse } from '@skaha-orc/shared';
 import { SERVICE_CATALOG } from '@skaha-orc/shared';
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
@@ -122,6 +123,45 @@ router.put('/dex/users', async (req, res) => {
   } catch (err) {
     logger.error({ err }, 'Failed to save Dex users');
     res.status(500).json({ success: false, error: 'Failed to save Dex users' });
+  }
+});
+
+/**
+ * @openapi
+ * /dex/hash-password:
+ *   post:
+ *     tags: [Dex]
+ *     summary: Hash a plaintext password with bcrypt
+ *     description: Returns a $2a$ bcrypt hash compatible with Dex staticPasswords.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [password]
+ *             properties:
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Bcrypt hash
+ *       400:
+ *         description: Password too short
+ */
+router.post('/dex/hash-password', async (req, res) => {
+  const { password } = req.body as { password?: string };
+  if (!password || password.length < 6) {
+    res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+    return;
+  }
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    const response: ApiResponse<{ hash: string }> = { success: true, data: { hash } };
+    res.json(response);
+  } catch (err) {
+    logger.error({ err }, 'Failed to hash password');
+    res.status(500).json({ success: false, error: 'Failed to hash password' });
   }
 });
 

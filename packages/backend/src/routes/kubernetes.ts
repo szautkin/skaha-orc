@@ -16,6 +16,27 @@ export function getCurrentContext(): string {
   return runtimeContext;
 }
 
+/**
+ * Auto-detect the current kubectl context if none was set via KUBE_CONTEXT env.
+ * Called once during bootstrap.
+ */
+export async function initializeContext(): Promise<void> {
+  if (runtimeContext) return; // already set via env
+  try {
+    const { stdout } = await execa(config.kubectlBinary, [
+      'config', 'current-context',
+    ], { env: { ...process.env, ...kubeEnv() } });
+    const detected = stdout.trim();
+    if (detected) {
+      runtimeContext = detected;
+      (config as { kubernetes: { context: string; kubeconfig: string } }).kubernetes.context = detected;
+      logger.info({ context: detected }, 'Auto-detected kubectl context');
+    }
+  } catch {
+    logger.debug('Could not auto-detect kubectl context');
+  }
+}
+
 const router = Router();
 
 /**

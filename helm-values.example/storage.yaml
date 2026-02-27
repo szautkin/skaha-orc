@@ -1,0 +1,14 @@
+# Storage UI — example values
+
+deployment:
+  storageUI:
+    oidc:
+      uri: https://oidc.example.com/auth
+      clientID: storage-ui
+      clientSecret: CHANGE_ME
+      redirectURI: https://your-platform.example.com/storage
+      callbackURI: https://your-platform.example.com/storage/oidc-callback
+      scope: openid profile
+  extraHosts:
+    - ip: "10.0.0.1"
+      hostname: haproxy.cadc.dao.nrc.ca

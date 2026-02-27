@@ -624,14 +624,14 @@ export function generateHAProxyConfig(options?: {
   lines.push('  option httpchk HEAD / HTTP/1.0');
   lines.push('');
 
-  // Frontend
+  // Frontend — always bind both 80 and 443
+  lines.push('frontend http-in');
+  lines.push('   log global');
   if (enableSsl) {
-    lines.push('frontend https-in');
-    lines.push('   log global');
     lines.push(`   bind *:443 ssl crt ${sslCert} ca-file ${caFile} verify optional`);
+    lines.push('   bind *:80');
   } else {
-    lines.push('frontend http-in');
-    lines.push('   log global');
+    lines.push('   bind *:443');
     lines.push('   bind *:80');
   }
   lines.push('   mode http');

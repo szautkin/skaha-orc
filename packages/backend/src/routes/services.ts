@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import type { ServiceId, ApiResponse, ServiceWithStatus, ExtraHost } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME, configUpdateSchema } from '@skaha-orc/shared';
+import { randomBytes } from 'crypto';
+import { networkInterfaces } from 'os';
+import type { ServiceId, ApiResponse, ServiceWithStatus, ExtraHost, DeploymentPhase } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME, configUpdateSchema, getUnmetDependencies } from '@skaha-orc/shared';
 import { getServiceStatus, getAllStatuses } from '../services/status.service.js';
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
+import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
 
 const IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
@@ -13,6 +16,161 @@ const IPV6_RE = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^([0-9a-fA-F]{1,4
 
 function isValidIp(ip: string): boolean {
   return IPV4_RE.test(ip) || IPV6_RE.test(ip);
+}
+
+/**
+ * Virtual / bridge interface name patterns that should be deprioritized
+ * when auto-detecting the host IP (Docker, UTM, VMware, VPN, etc.).
+ */
+const VIRTUAL_IFACE_RE = /^(bridge|vmnet|veth|docker|br-|utun|tun|tap|virbr|vbox)/i;
+
+/**
+ * Detects the machine's primary non-loopback, non-link-local IPv4 address.
+ * Prefers physical interfaces (en*, eth*) over virtual bridges / VPN tunnels,
+ * so a Docker bridge `10.0.0.1` won't shadow the real LAN address.
+ */
+function detectHostIp(): string | null {
+  const nets = networkInterfaces();
+  let fallback: string | null = null;
+
+  for (const [name, entries] of Object.entries(nets)) {
+    if (!entries) continue;
+    for (const entry of entries) {
+      if (entry.family !== 'IPv4' || entry.internal || entry.address.startsWith('169.254.')) {
+        continue;
+      }
+      // Prefer physical interfaces; keep virtual ones as fallback only
+      if (VIRTUAL_IFACE_RE.test(name)) {
+        fallback ??= entry.address;
+      } else {
+        return entry.address;
+      }
+    }
+  }
+  return fallback;
+}
+
+/**
+ * On startup, if no extraHosts entry exists for the platform hostname in any
+ * values file, detect the host IP and write it into all service values files
+ * that have a deployment section.
+ */
+export async function initializeHostIp(): Promise<void> {
+  // Check if any file already has the platform host entry
+  for (const def of Object.values(SERVICE_CATALOG)) {
+    if (!def.valuesFile) continue;
+    try {
+      const data = await readValuesFile(def.valuesFile);
+      const deployment = data.deployment as { extraHosts?: ExtraHost[] } | undefined;
+      if (deployment?.extraHosts?.some((h) => h.hostname === PLATFORM_HOSTNAME && h.ip)) {
+        logger.debug('Host IP already configured, skipping auto-detect');
+        return;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  const ip = detectHostIp();
+  if (!ip) {
+    logger.debug('Could not auto-detect host IP');
+    return;
+  }
+
+  let updated = 0;
+  for (const def of Object.values(SERVICE_CATALOG)) {
+    if (!def.valuesFile) continue;
+    try {
+      const data = await readValuesFile(def.valuesFile);
+      const deployment = (data.deployment ?? {}) as Record<string, unknown>;
+      const extraHosts = (deployment.extraHosts as ExtraHost[] | undefined) ?? [];
+      const existing = extraHosts.find((h) => h.hostname === PLATFORM_HOSTNAME);
+      if (existing) {
+        existing.ip = ip;
+      } else {
+        extraHosts.push({ ip, hostname: PLATFORM_HOSTNAME });
+      }
+      deployment.extraHosts = extraHosts;
+      data.deployment = deployment;
+      await writeValuesFile(def.valuesFile, data);
+      updated++;
+    } catch {
+      continue;
+    }
+  }
+
+  if (updated > 0) {
+    logger.info({ ip, updated }, 'Auto-detected host IP and wrote to values files');
+  }
+}
+
+/**
+ * On startup, if the skaha↔cavern admin API key is empty in either values file,
+ * generate a shared key and write it to both files.
+ */
+export async function initializeApiKeys(): Promise<void> {
+  const skahaFile = SERVICE_CATALOG.skaha?.valuesFile;
+  const cavernFile = SERVICE_CATALOG.cavern?.valuesFile;
+  if (!skahaFile || !cavernFile) return;
+
+  let skahaData: Record<string, unknown>;
+  let cavernData: Record<string, unknown>;
+  try {
+    skahaData = await readValuesFile(skahaFile);
+    cavernData = await readValuesFile(cavernFile);
+  } catch {
+    return;
+  }
+
+  // Read existing key from skaha values
+  const skahaKey = getNestedString(skahaData,
+    ['deployment', 'skaha', 'sessions', 'userStorage', 'admin', 'auth', 'apiKey']);
+
+  // Read existing key from cavern values
+  const cavernKey = getNestedString(cavernData,
+    ['deployment', 'cavern', 'extraConfigData', 'adminAPIKeys', 'skaha']);
+
+  // If both are already populated, nothing to do
+  if (skahaKey && cavernKey) {
+    logger.debug('Skaha↔Cavern API key already configured');
+    return;
+  }
+
+  // Use whichever existing key we find, or generate a new one
+  const apiKey = skahaKey || cavernKey || randomBytes(32).toString('base64');
+
+  // Write to skaha
+  setNestedValue(skahaData,
+    ['deployment', 'skaha', 'sessions', 'userStorage', 'admin', 'auth', 'apiKey'], apiKey);
+  await writeValuesFile(skahaFile, skahaData);
+
+  // Write to cavern
+  setNestedValue(cavernData,
+    ['deployment', 'cavern', 'extraConfigData', 'adminAPIKeys', 'skaha'], apiKey);
+  await writeValuesFile(cavernFile, cavernData);
+
+  logger.info('Auto-generated skaha↔cavern API key and wrote to values files');
+}
+
+function getNestedString(obj: Record<string, unknown>, keys: string[]): string {
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current === null || typeof current !== 'object') return '';
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'string' ? current : '';
+}
+
+function setNestedValue(obj: Record<string, unknown>, keys: string[], value: unknown): void {
+  let current: Record<string, unknown> = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i]!;
+    if (typeof current[key] !== 'object' || current[key] === null) {
+      current[key] = {};
+    }
+    current = current[key] as Record<string, unknown>;
+  }
+  current[keys[keys.length - 1]!] = value;
 }
 
 const router = Router();
@@ -113,6 +271,59 @@ router.get('/services/host-ip', async (_req, res) => {
     logger.error({ err }, 'Failed to read host IP');
     res.status(500).json({ success: false, error: 'Failed to read host IP' });
   }
+});
+
+/**
+ * @openapi
+ * /services/host-ips:
+ *   get:
+ *     tags: [Services]
+ *     summary: List all detected host IPv4 addresses
+ *     description: Returns every non-loopback, non-link-local IPv4 address on the machine with its interface name.
+ *     responses:
+ *       200:
+ *         description: Array of detected addresses
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           ip:
+ *                             type: string
+ *                           iface:
+ *                             type: string
+ *                           virtual:
+ *                             type: boolean
+ */
+router.get('/services/host-ips', (_req, res) => {
+  const nets = networkInterfaces();
+  const result: { ip: string; iface: string; virtual: boolean }[] = [];
+
+  for (const [name, entries] of Object.entries(nets)) {
+    if (!entries) continue;
+    for (const entry of entries) {
+      if (entry.family !== 'IPv4' || entry.internal || entry.address.startsWith('169.254.')) {
+        continue;
+      }
+      result.push({
+        ip: entry.address,
+        iface: name,
+        virtual: VIRTUAL_IFACE_RE.test(name),
+      });
+    }
+  }
+
+  // Physical interfaces first, then virtual
+  result.sort((a, b) => (a.virtual === b.virtual ? 0 : a.virtual ? 1 : -1));
+
+  res.json({ success: true, data: result });
 });
 
 /**
@@ -390,6 +601,186 @@ router.get('/services/:id/config', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/ApiResponse'
  */
+const PLACEHOLDER_PATTERNS = [
+  { pattern: /CHANGE_ME/i, label: 'CHANGE_ME' },
+  { pattern: /example\.com/i, label: 'example.com' },
+  { pattern: /^your-/i, label: 'placeholder prefix' },
+  { pattern: /^TODO$/i, label: 'TODO' },
+];
+
+function findPlaceholders(obj: unknown, path: string, warnings: string[]): void {
+  if (typeof obj === 'string') {
+    for (const { pattern, label } of PLACEHOLDER_PATTERNS) {
+      if (pattern.test(obj)) {
+        warnings.push(`${path} contains '${label}'`);
+        break;
+      }
+    }
+  } else if (Array.isArray(obj)) {
+    obj.forEach((item, i) => findPlaceholders(item, `${path}[${i}]`, warnings));
+  } else if (obj !== null && typeof obj === 'object') {
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      findPlaceholders(value, path ? `${path}.${key}` : key, warnings);
+    }
+  }
+}
+
+router.get('/services/:id/config-warnings', async (req, res) => {
+  const serviceId = req.params.id as ServiceId;
+  const def = SERVICE_CATALOG[serviceId];
+
+  if (!def) {
+    res.status(404).json({ success: false, error: `Unknown service: ${serviceId}` });
+    return;
+  }
+
+  if (!def.valuesFile) {
+    res.json({ success: true, data: { warnings: [] } });
+    return;
+  }
+
+  try {
+    const config = await readValuesFile(def.valuesFile);
+    const warnings: string[] = [];
+    findPlaceholders(config, '', warnings);
+    warnings.push(...findSemanticWarnings(serviceId, config));
+    res.json({ success: true, data: { warnings } });
+  } catch {
+    res.json({ success: true, data: { warnings: [] } });
+  }
+});
+
+// Semantic config checks for known deployment pitfalls
+const SCOPE_PATHS: Record<string, string> = {
+  'science-portal': 'deployment.sciencePortal.oidc.scope',
+  'storage-ui': 'deployment.storageUI.oidc.scope',
+  skaha: 'deployment.skaha.oidc.scope',
+};
+
+const MOUNT_PREFIXES: Record<string, string> = {
+  skaha: 'deployment.skaha',
+  cavern: 'deployment.cavern',
+  'science-portal': 'deployment.sciencePortal',
+  'posix-mapper': 'deployment.posixMapper',
+};
+
+export function findSemanticWarnings(serviceId: string, config: Record<string, unknown>): string[] {
+  const warnings: string[] = [];
+
+  // 1. OIDC scope must include offline_access for refresh tokens
+  const scopePath = SCOPE_PATHS[serviceId];
+  if (scopePath) {
+    const scope = getNestedString(config, scopePath.split('.'));
+    if (scope && !scope.includes('offline_access')) {
+      warnings.push(`${scopePath}: missing 'offline_access' — will cause refresh_token errors`);
+    }
+  }
+
+  // 2. CA cert volume mount present for TLS-dependent services
+  const prefix = MOUNT_PREFIXES[serviceId];
+  if (prefix) {
+    const mountsPath = `${prefix}.extraVolumeMounts`;
+    const mounts = getNestedValue(config, mountsPath);
+    const hasCacert = Array.isArray(mounts) &&
+      (mounts as Array<Record<string, unknown>>).some((m) => m.mountPath === '/config/cacerts');
+    if (!hasCacert) {
+      warnings.push(`${mountsPath}: missing /config/cacerts mount — SSL will fail`);
+    }
+  }
+
+  // 3. Cavern identityManagerClass must be StandardIdentityManager
+  if (serviceId === 'cavern') {
+    const cls = getNestedString(config, ['deployment', 'cavern', 'identityManagerClass']);
+    if (cls && cls !== 'org.opencadc.auth.StandardIdentityManager') {
+      warnings.push(`deployment.cavern.identityManagerClass: expected 'StandardIdentityManager', got '${cls}'`);
+    }
+  }
+
+  return warnings;
+}
+
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const keys = path.split('.');
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current == null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+router.post('/services/:id/auto-fix', async (req, res) => {
+  const serviceId = req.params.id as ServiceId;
+  const def = SERVICE_CATALOG[serviceId];
+
+  if (!def) {
+    res.status(404).json({ success: false, error: `Unknown service: ${serviceId}` });
+    return;
+  }
+
+  if (!def.valuesFile) {
+    res.status(400).json({ success: false, error: 'Service has no values file' });
+    return;
+  }
+
+  try {
+    const config = await readValuesFile(def.valuesFile);
+    const fixes: string[] = [];
+
+    // Fix 1: Add offline_access to OIDC scope
+    const scopePath = SCOPE_PATHS[serviceId];
+    if (scopePath) {
+      const scope = getNestedString(config, scopePath.split('.'));
+      if (scope && !scope.includes('offline_access')) {
+        setNestedValue(config, scopePath.split('.'), `${scope} offline_access`);
+        fixes.push(`Added 'offline_access' to ${scopePath}`);
+      }
+    }
+
+    // Fix 2: Add CA cert volume mounts
+    const prefix = MOUNT_PREFIXES[serviceId];
+    if (prefix) {
+      const mountsPath = `${prefix}.extraVolumeMounts`;
+      const mountsVal = getNestedValue(config, mountsPath);
+      const mounts = (Array.isArray(mountsVal) ? mountsVal : []) as Record<string, unknown>[];
+      if (!mounts.some((m) => m.mountPath === '/config/cacerts')) {
+        mounts.push({ mountPath: '/config/cacerts', name: 'cacert-volume' });
+        setNestedValue(config, mountsPath.split('.'), mounts);
+        fixes.push(`Added /config/cacerts mount to ${mountsPath}`);
+      }
+
+      const volsPath = `${prefix}.extraVolumes`;
+      const volsVal = getNestedValue(config, volsPath);
+      const vols = (Array.isArray(volsVal) ? volsVal : []) as Record<string, unknown>[];
+      if (!vols.some((v) => v.name === 'cacert-volume')) {
+        const secretName = `${serviceId}-cacert-secret`;
+        vols.push({ name: 'cacert-volume', secret: { defaultMode: 420, secretName } });
+        setNestedValue(config, volsPath.split('.'), vols);
+        fixes.push(`Added cacert-volume to ${volsPath}`);
+      }
+    }
+
+    // Fix 3: Set cavern identityManagerClass
+    if (serviceId === 'cavern') {
+      const cls = getNestedString(config, ['deployment', 'cavern', 'identityManagerClass']);
+      if (cls !== 'org.opencadc.auth.StandardIdentityManager') {
+        setNestedValue(config, ['deployment', 'cavern', 'identityManagerClass'],
+          'org.opencadc.auth.StandardIdentityManager');
+        fixes.push('Set identityManagerClass to StandardIdentityManager');
+      }
+    }
+
+    if (fixes.length > 0) {
+      await writeValuesFile(def.valuesFile, config);
+    }
+
+    res.json({ success: true, data: { fixes } });
+  } catch (err) {
+    logger.error({ err, serviceId }, 'Auto-fix failed');
+    res.status(500).json({ success: false, error: 'Auto-fix failed' });
+  }
+});
+
 router.put('/services/:id/config', async (req, res) => {
   const serviceId = req.params.id as ServiceId;
   const def = SERVICE_CATALOG[serviceId];
@@ -481,11 +872,29 @@ router.post('/services/:id/deploy', async (req, res) => {
   const dryRun = req.body?.dryRun === true;
 
   try {
+    // Dependency guard
+    const statuses = await getAllStatuses();
+    const phaseMap = new Map<ServiceId, DeploymentPhase>(
+      statuses.map((s) => [s.id, s.status.phase]),
+    );
+    const unmetDeps = getUnmetDependencies(serviceId, phaseMap);
+    if (unmetDeps.length > 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Cannot deploy: dependencies not ready',
+        data: { unmetDeps },
+      });
+      return;
+    }
+
     const result = await helmDeploy(serviceId, { dryRun });
+    if (!result.success) {
+      logger.error({ serviceId, output: result.output }, 'Deploy returned failure');
+    }
     res.json({ success: result.success, data: { output: result.output } });
   } catch (err) {
-    logger.error({ err, serviceId }, 'Deploy failed');
-    res.status(500).json({ success: false, error: 'Deploy failed' });
+    logger.error({ err, serviceId }, 'Deploy threw unexpectedly');
+    res.status(500).json({ success: false, error: `Deploy failed: ${err instanceof Error ? err.message : String(err)}` });
   }
 });
 
@@ -541,10 +950,13 @@ router.post('/services/:id/uninstall', async (req, res) => {
 
   try {
     const result = await helmUninstall(serviceId);
+    if (!result.success) {
+      logger.error({ serviceId, output: result.output }, 'Uninstall returned failure');
+    }
     res.json({ success: result.success, data: { output: result.output } });
   } catch (err) {
-    logger.error({ err, serviceId }, 'Uninstall failed');
-    res.status(500).json({ success: false, error: 'Uninstall failed' });
+    logger.error({ err, serviceId }, 'Uninstall threw unexpectedly');
+    res.status(500).json({ success: false, error: `Uninstall failed: ${err instanceof Error ? err.message : String(err)}` });
   }
 });
 
@@ -621,10 +1033,13 @@ router.post('/services/:id/pause', async (req, res) => {
 
   try {
     const result = await scaleDeployment(def.namespace, serviceId, 0);
+    if (!result.success) {
+      logger.error({ serviceId, output: result.output }, 'Pause returned failure');
+    }
     res.json({ success: result.success, data: { output: result.output } });
   } catch (err) {
-    logger.error({ err, serviceId }, 'Pause failed');
-    res.status(500).json({ success: false, error: 'Pause failed' });
+    logger.error({ err, serviceId }, 'Pause threw unexpectedly');
+    res.status(500).json({ success: false, error: `Pause failed: ${err instanceof Error ? err.message : String(err)}` });
   }
 });
 
@@ -701,10 +1116,35 @@ router.post('/services/:id/resume', async (req, res) => {
 
   try {
     const result = await scaleDeployment(def.namespace, serviceId, 1);
+    if (!result.success) {
+      logger.error({ serviceId, output: result.output }, 'Resume returned failure');
+    }
     res.json({ success: result.success, data: { output: result.output } });
   } catch (err) {
-    logger.error({ err, serviceId }, 'Resume failed');
-    res.status(500).json({ success: false, error: 'Resume failed' });
+    logger.error({ err, serviceId }, 'Resume threw unexpectedly');
+    res.status(500).json({ success: false, error: `Resume failed: ${err instanceof Error ? err.message : String(err)}` });
+  }
+});
+
+router.post('/services/:id/test', async (req, res) => {
+  const serviceId = req.params.id as ServiceId;
+
+  if (!SERVICE_IDS.includes(serviceId)) {
+    res.status(404).json({ success: false, error: `Unknown service: ${serviceId}` });
+    return;
+  }
+
+  try {
+    const status = await getServiceStatus(serviceId);
+    if (status.phase === 'not_installed') {
+      res.status(400).json({ success: false, error: 'Service is not deployed' });
+      return;
+    }
+    const results = await runIntegrationTests(serviceId);
+    res.json({ success: true, data: { results } });
+  } catch (err) {
+    logger.error({ err, serviceId }, 'Integration test failed');
+    res.status(500).json({ success: false, error: `Tests failed: ${err instanceof Error ? err.message : String(err)}` });
   }
 });
 

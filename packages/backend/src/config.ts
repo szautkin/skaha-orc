@@ -33,6 +33,12 @@ export const config = {
   },
 } as const;
 
+/**
+ * Resolves a bare filename to an absolute path inside helmConfigDir.
+ * Rejects filenames containing `..` or `/` to prevent directory traversal.
+ * @param filename - Bare YAML filename (e.g. "base-values.yaml").
+ * @throws If the filename contains path separators or traversal sequences.
+ */
 export function valuesFilePath(filename: string): string {
   if (filename.includes('..') || filename.includes('/')) {
     throw new Error(`Invalid values filename: ${filename}`);

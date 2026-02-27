@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Play, Loader2, AlertTriangle } from 'lucide-react';
-import type { ServiceId, DeploymentProfileId } from '@skaha-orc/shared';
+import { Play, Loader2, AlertTriangle, Lock } from 'lucide-react';
+import type { ServiceId, DeploymentProfileId, DeploymentPhase } from '@skaha-orc/shared';
 import {
   SERVICE_CATALOG,
   SERVICE_IDS,
@@ -11,6 +11,7 @@ import {
   getServicesByTier,
 } from '@skaha-orc/shared';
 import { useDeployAll } from '@/hooks/use-deploy';
+import { useServicesLive } from '@/hooks/use-services-live';
 import { DeployProgress } from './DeployProgress';
 import { LogStream } from './LogStream';
 
@@ -22,6 +23,12 @@ function setsEqual(a: Set<ServiceId>, b: Set<ServiceId>): boolean {
   return true;
 }
 
+const RUNNING_PHASES: ReadonlySet<DeploymentPhase> = new Set([
+  'deployed',
+  'healthy',
+  'waiting_ready',
+]);
+
 export function DeployWizard() {
   const standardProfile = DEPLOYMENT_PROFILES.find((p) => p.id === 'standard')!;
   const [selected, setSelected] = useState<Set<ServiceId>>(
@@ -29,6 +36,7 @@ export function DeployWizard() {
   );
   const [dryRun, setDryRun] = useState(false);
   const deployAll = useDeployAll();
+  const { data: allServices } = useServicesLive();
 
   const servicesByTier = useMemo(() => getServicesByTier(), []);
 
@@ -42,6 +50,33 @@ export function DeployWizard() {
   }, [selected]);
 
   const order = getDeploymentOrder([...selected]);
+
+  // Compute external unmet deps: deps not in selected set AND not already deployed
+  const externalUnmetDeps = useMemo(() => {
+    const phaseMap = new Map<ServiceId, DeploymentPhase>(
+      (allServices ?? []).map((s) => [s.id, s.status.phase]),
+    );
+    const result: { serviceId: ServiceId; serviceName: string; depId: ServiceId; depName: string }[] = [];
+    for (const id of selected) {
+      const deps = SERVICE_CATALOG[id]?.dependencies ?? [];
+      for (const depId of deps) {
+        if (selected.has(depId)) continue;
+        const phase = phaseMap.get(depId);
+        if (!phase || !RUNNING_PHASES.has(phase)) {
+          result.push({
+            serviceId: id,
+            serviceName: SERVICE_CATALOG[id].name,
+            depId,
+            depName: SERVICE_CATALOG[depId].name,
+          });
+        }
+      }
+    }
+    return result;
+  }, [selected, allServices]);
+
+  const hasUnmetDeps = externalUnmetDeps.length > 0;
+  const missingDepNames = [...new Set(externalUnmetDeps.map((d) => d.depName))];
 
   const toggle = (id: ServiceId) => {
     const next = new Set(selected);
@@ -144,6 +179,17 @@ export function DeployWizard() {
           </label>
         </div>
 
+        {/* Missing dependency warning */}
+        {hasUnmetDeps && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-buttercup-yellow rounded-md p-3 text-sm text-amber-800">
+            <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>
+              The following dependencies are required but not selected or deployed:{' '}
+              <span className="font-medium">{missingDepNames.join(', ')}</span>
+            </span>
+          </div>
+        )}
+
         {/* Mutual exclusion warning */}
         {selected.has('dex') && selected.has('keycloak') && (
           <div className="flex items-start gap-2 bg-amber-50 border border-buttercup-yellow rounded-md p-3 text-sm text-amber-800">
@@ -156,12 +202,17 @@ export function DeployWizard() {
         <button
           className="w-full flex items-center justify-center gap-2 bg-congress-blue text-white px-4 py-2.5 rounded-md text-sm font-medium hover:bg-prussian-blue transition-colors disabled:opacity-50"
           onClick={handleStart}
-          disabled={isRunning || selected.size === 0}
+          disabled={isRunning || selected.size === 0 || hasUnmetDeps}
         >
           {isRunning ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               Deploying...
+            </>
+          ) : hasUnmetDeps ? (
+            <>
+              <Lock className="w-4 h-4" />
+              Missing Dependencies
             </>
           ) : (
             <>

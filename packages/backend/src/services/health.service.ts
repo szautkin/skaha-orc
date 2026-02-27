@@ -1,3 +1,4 @@
+import https from 'https';
 import type { ServiceId } from '@skaha-orc/shared';
 import { SERVICE_CATALOG, PLATFORM_HOSTNAME } from '@skaha-orc/shared';
 import { config } from '../config.js';
@@ -98,21 +99,20 @@ export async function waitForHealthy(serviceId: ServiceId): Promise<void> {
   });
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), httpTimeoutMs);
-
-    const res = await fetch(url, {
-      signal: controller.signal,
-      // Allow self-signed certs via NODE_TLS_REJECT_UNAUTHORIZED env var
+    const statusCode = await new Promise<number>((resolve, reject) => {
+      const req = https.get(url, { rejectUnauthorized: false, timeout: httpTimeoutMs }, (res) => {
+        res.resume(); // drain response body
+        resolve(res.statusCode ?? 0);
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
     });
 
-    clearTimeout(timer);
-
-    if (res.ok || res.status < 500) {
+    if (statusCode > 0 && statusCode < 500) {
       eventBus.broadcast({
         type: 'health_check',
         serviceId,
-        message: `HTTP OK (${res.status})`,
+        message: `HTTP OK (${statusCode})`,
         timestamp: timestamp(),
         healthStep: 'http_ok',
       });
@@ -121,14 +121,14 @@ export async function waitForHealthy(serviceId: ServiceId): Promise<void> {
         type: 'phase_change',
         serviceId,
         phase: 'healthy',
-        message: `Service healthy — HTTP ${res.status}`,
+        message: `Service healthy — HTTP ${statusCode}`,
         timestamp: timestamp(),
       });
     } else {
       eventBus.broadcast({
         type: 'health_check',
         serviceId,
-        message: `HTTP failed (${res.status}) — staying at deployed`,
+        message: `HTTP failed (${statusCode}) — staying at deployed`,
         timestamp: timestamp(),
         healthStep: 'http_failed',
       });
@@ -142,8 +142,9 @@ export async function waitForHealthy(serviceId: ServiceId): Promise<void> {
       });
     }
   } catch (err) {
+    const cause = err instanceof Error && err.cause ? String(err.cause) : undefined;
     const msg = err instanceof Error ? err.message : String(err);
-    logger.warn({ serviceId, err: msg }, 'Health check HTTP ping failed');
+    logger.warn({ serviceId, err: msg, cause, url }, 'Health check HTTP ping failed');
 
     eventBus.broadcast({
       type: 'health_check',

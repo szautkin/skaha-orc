@@ -81,4 +81,5 @@ export const platformOidcSettingsSchema = z.object({
   issuerUri: z.string().url(),
   sciencePortal: oidcClientConfigSchema,
   storageUi: oidcClientConfigSchema,
+  skaha: oidcClientConfigSchema,
 });

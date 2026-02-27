@@ -8,6 +8,7 @@ export type {
   OidcConfig,
   OidcClientConfig,
   PlatformOidcSettings,
+  ReadinessLevel,
   PostgresConfig,
   RedisConfig,
   ExtraHost,
@@ -81,6 +82,7 @@ export {
   DEPLOYMENT_PROFILES,
   getServicesByTier,
   getDeploymentOrder,
+  getUnmetDependencies,
 } from './constants/catalog.js';
 export type { DeploymentProfileId, DeploymentProfile } from './constants/catalog.js';
 

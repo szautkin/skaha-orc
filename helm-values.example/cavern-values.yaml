@@ -1,0 +1,16 @@
+# Cavern — example values
+
+deployment:
+  cavern:
+    oidcURI: https://oidc.example.com/auth
+  extraHosts:
+    - ip: "10.0.0.1"
+      hostname: haproxy.cadc.dao.nrc.ca
+
+postgres:
+  install: true
+  auth:
+    username: cavern
+    password: CHANGE_ME
+    database: cavern
+    schema: uws
