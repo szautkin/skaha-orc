@@ -8,6 +8,7 @@ import certRoutes from './routes/certs.js';
 import haproxyRoutes from './routes/haproxy.js';
 import oidcRoutes from './routes/oidc.js';
 import dexRoutes from './routes/dex.js';
+import tlsRoutes from './routes/tls.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -29,6 +30,7 @@ export function createApp(): express.Express {
   app.use('/api', haproxyRoutes);
   app.use('/api', oidcRoutes);
   app.use('/api', dexRoutes);
+  app.use('/api', tlsRoutes);
 
   return app;
 }

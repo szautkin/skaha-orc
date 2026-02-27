@@ -18,9 +18,10 @@ import {
 import { useCaInfo } from '@/hooks/use-certs';
 import { CaManager } from '@/components/certs/CaManager';
 import { HAProxyCertPanel } from '@/components/certs/HAProxyCertPanel';
+import { TlsSettingsPanel } from '@/components/tls/TlsSettingsPanel';
 import { toast } from 'sonner';
 
-type Tab = 'config' | 'certs';
+type Tab = 'config' | 'certs' | 'tls';
 
 export function HAProxyPage() {
   const [activeTab, setActiveTab] = useState<Tab>('config');
@@ -175,6 +176,16 @@ export function HAProxyPage() {
             }`}
           >
             Certificates
+          </button>
+          <button
+            onClick={() => setActiveTab('tls')}
+            className={`pb-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'tls'
+                ? 'border-congress-blue text-congress-blue'
+                : 'border-transparent text-neutral-gray hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            TLS
           </button>
         </nav>
       </div>
@@ -525,6 +536,9 @@ export function HAProxyPage() {
           <HAProxyCertPanel />
         </div>
       )}
+
+      {/* TLS tab */}
+      {activeTab === 'tls' && <TlsSettingsPanel />}
     </div>
   );
 }

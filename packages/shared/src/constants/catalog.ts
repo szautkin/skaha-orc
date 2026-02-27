@@ -1,4 +1,4 @@
-import type { ServiceDefinition, ServiceId, ServiceTier } from '../types/services.js';
+import type { ServiceDefinition, ServiceId, ServiceTier, DeployPhaseNumber, RuntimeDep } from '../types/services.js';
 import type { DeploymentPhase } from '../types/deployment.js';
 
 export const PLATFORM_HOSTNAME = 'haproxy.cadc.dao.nrc.ca';
@@ -11,6 +11,15 @@ export const TIER_LABELS: Record<ServiceTier, string> = {
   site: 'Site-Specific',
 };
 
+export const DEPLOY_PHASE_LABELS: Record<DeployPhaseNumber, string> = {
+  1: 'Foundation',
+  2: 'Identity & Discovery',
+  3: 'Core Services',
+  4: 'Session & UI',
+};
+
+export const DEPLOY_PHASE_ORDER: DeployPhaseNumber[] = [1, 2, 3, 4];
+
 export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
   base: {
     id: 'base',
@@ -18,6 +27,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Traefik ingress controller, TLS, and namespaces',
     namespace: 'default',
     dependencies: [],
+    runtimeDeps: [],
+    deployPhase: 1,
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'base' },
     valuesFile: 'base-values.yaml',
     tier: 'core',
@@ -31,6 +42,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Reverse proxy and load balancer',
     namespace: 'skaha-system',
     dependencies: ['base'],
+    runtimeDeps: [],
+    deployPhase: 2,
     chartSource: { type: 'haproxy' },
     valuesFile: null,
     tier: 'site',
@@ -44,6 +57,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'IVOA Registry service',
     namespace: 'skaha-system',
     dependencies: ['base'],
+    runtimeDeps: [],
+    deployPhase: 2,
     chartSource: { type: 'local', path: 'reg' },
     valuesFile: 'reg-values.yaml',
     tier: 'core',
@@ -57,6 +72,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'PersistentVolume and PersistentVolumeClaim resources',
     namespace: 'skaha-system',
     dependencies: ['base'],
+    runtimeDeps: [],
+    deployPhase: 1,
     chartSource: { type: 'kubectl', path: 'volumes.yaml' },
     valuesFile: 'volumes.yaml',
     tier: 'core',
@@ -70,6 +87,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Standalone PostgreSQL for posix-mapper',
     namespace: 'skaha-system',
     dependencies: ['volumes'],
+    runtimeDeps: [],
+    deployPhase: 2,
     chartSource: { type: 'kubectl', path: 'posix-mapper-postgres.yaml' },
     valuesFile: 'posix-mapper-postgres.yaml',
     tier: 'core',
@@ -83,6 +102,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'UID/GID mapping service with PostgreSQL',
     namespace: 'skaha-system',
     dependencies: ['reg', 'posix-mapper-db'],
+    runtimeDeps: [['dex', 'keycloak'], ['mock-ac'], 'haproxy'],
+    deployPhase: 3,
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'posixmapper' },
     valuesFile: 'posix-mapper-values.yaml',
     tier: 'core',
@@ -90,12 +111,29 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     k8sServiceName: 'posix-mapper-tomcat-svc',
     k8sServicePort: 8080,
   },
+  'mock-ac': {
+    id: 'mock-ac',
+    name: 'Mock AC',
+    description: 'Mock IVOA GMS / user management service (dev/demo)',
+    namespace: 'skaha-system',
+    dependencies: ['base'],
+    runtimeDeps: [],
+    deployPhase: 2,
+    chartSource: { type: 'local', path: 'mock-ac' },
+    valuesFile: 'mock-ac-values.yaml',
+    tier: 'site',
+    endpointPath: '/ac',
+    k8sServiceName: 'mock-ac',
+    k8sServicePort: 80,
+  },
   skaha: {
     id: 'skaha',
     name: 'Skaha',
     description: 'Session management service with Redis',
     namespace: 'skaha-system',
     dependencies: ['cavern'],
+    runtimeDeps: [['dex', 'keycloak'], ['mock-ac'], 'haproxy'],
+    deployPhase: 4,
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'skaha' },
     valuesFile: 'skaha-values.yaml',
     tier: 'core',
@@ -109,6 +147,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'VOSpace storage service with PostgreSQL UWS',
     namespace: 'skaha-system',
     dependencies: ['posix-mapper'],
+    runtimeDeps: [['dex', 'keycloak'], ['mock-ac'], 'haproxy'],
+    deployPhase: 3,
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'cavern' },
     valuesFile: 'cavern-values.yaml',
     tier: 'core',
@@ -122,6 +162,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Web UI for launching sessions (OIDC + Redis)',
     namespace: 'skaha-system',
     dependencies: ['skaha'],
+    runtimeDeps: [['dex', 'keycloak'], 'haproxy'],
+    deployPhase: 4,
     chartSource: { type: 'repo', repo: 'science-platform', chart: 'scienceportal' },
     valuesFile: 'science-portal-values.yaml',
     tier: 'recommended',
@@ -135,6 +177,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Storage browser with OIDC and Redis',
     namespace: 'skaha-system',
     dependencies: ['cavern'],
+    runtimeDeps: [['dex', 'keycloak'], 'haproxy'],
+    deployPhase: 4,
     chartSource: { type: 'repo', repo: 'science-platform-client', chart: 'storageui' },
     valuesFile: 'storage.yaml',
     tier: 'recommended',
@@ -148,6 +192,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'DOI minting service',
     namespace: 'skaha-system',
     dependencies: ['cavern'],
+    runtimeDeps: [['dex', 'keycloak'], 'haproxy'],
+    deployPhase: 4,
     chartSource: {
       type: 'local',
       path: 'doi',
@@ -164,6 +210,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Lightweight OIDC provider with static passwords (dev/demo)',
     namespace: 'skaha-system',
     dependencies: ['base'],
+    runtimeDeps: [],
+    deployPhase: 2,
     chartSource: {
       type: 'local',
       path: 'dex',
@@ -180,6 +228,8 @@ export const SERVICE_CATALOG: Record<ServiceId, ServiceDefinition> = {
     description: 'Full-featured OIDC identity provider with admin console',
     namespace: 'skaha-system',
     dependencies: ['base'],
+    runtimeDeps: [],
+    deployPhase: 2,
     chartSource: {
       type: 'repo',
       repo: 'bitnami',
@@ -211,7 +261,7 @@ export const DEPLOYMENT_PROFILES: DeploymentProfile[] = [
     id: 'standard',
     name: 'Dev / Demo',
     description: 'Core + recommended + HAProxy + Dex (static passwords, zero setup)',
-    serviceIds: [...coreAndRecommended, 'haproxy', 'dex'] as ServiceId[],
+    serviceIds: [...coreAndRecommended, 'haproxy', 'dex', 'mock-ac'] as ServiceId[],
   },
   {
     id: 'production',
@@ -332,4 +382,51 @@ export function getUnmetDependencies(
       return !phase || !RUNNING_PHASES.has(phase);
     })
     .map((depId) => ({ id: depId, name: SERVICE_CATALOG[depId].name }));
+}
+
+function isRuntimeDepSatisfied(dep: RuntimeDep, phaseMap: ReadonlyMap<ServiceId, DeploymentPhase>): boolean {
+  if (Array.isArray(dep)) {
+    return dep.some((id) => {
+      const phase = phaseMap.get(id);
+      return phase && RUNNING_PHASES.has(phase);
+    });
+  }
+  const phase = phaseMap.get(dep);
+  return !!phase && RUNNING_PHASES.has(phase);
+}
+
+function runtimeDepLabel(dep: RuntimeDep): string {
+  if (Array.isArray(dep)) {
+    return dep.map((id) => SERVICE_CATALOG[id]?.name ?? id).join(' or ');
+  }
+  return SERVICE_CATALOG[dep]?.name ?? dep;
+}
+
+/**
+ * Returns runtime dependency warnings for a service. These are NOT deploy-blockers
+ * but indicate the service will fail at runtime without them.
+ */
+export function getRuntimeWarnings(
+  serviceId: ServiceId,
+  phaseMap: ReadonlyMap<ServiceId, DeploymentPhase>,
+): string[] {
+  const def = SERVICE_CATALOG[serviceId];
+  if (!def) return [];
+
+  return def.runtimeDeps
+    .filter((dep) => !isRuntimeDepSatisfied(dep, phaseMap))
+    .map((dep) => `${runtimeDepLabel(dep)} not running (needed at runtime)`);
+}
+
+/**
+ * Groups services by their deploy phase.
+ */
+export function getServicesByPhase(serviceIds?: ServiceId[]): Record<DeployPhaseNumber, ServiceId[]> {
+  const ids = serviceIds ?? (Object.keys(SERVICE_CATALOG) as ServiceId[]);
+  const result: Record<DeployPhaseNumber, ServiceId[]> = { 1: [], 2: [], 3: [], 4: [] };
+  for (const id of ids) {
+    const def = SERVICE_CATALOG[id];
+    if (def) result[def.deployPhase].push(id);
+  }
+  return result;
 }

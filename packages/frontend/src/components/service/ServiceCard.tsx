@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, RotateCcw, Square, Server, ExternalLink, Lock, AlertTriangle } from 'lucide-react';
 import type { ServiceWithStatus, ServiceId, DeploymentPhase, ReadinessLevel } from '@skaha-orc/shared';
-import { PLATFORM_HOSTNAME, getUnmetDependencies } from '@skaha-orc/shared';
+import { PLATFORM_HOSTNAME, getUnmetDependencies, getRuntimeWarnings } from '@skaha-orc/shared';
 import { StatusBadge } from './StatusBadge';
 import { ReadinessDot } from './ReadinessDot';
 import { useDeploy, usePause, useResume, useUninstall } from '@/hooks/use-services';
@@ -26,36 +26,48 @@ export function ServiceCard({ service, allServices }: ServiceCardProps) {
   const isRunning = phase === 'deployed' || phase === 'healthy' || phase === 'waiting_ready';
   const isPaused = phase === 'paused';
 
-  const unmetDeps = useMemo(() => {
-    const phaseMap = new Map<ServiceId, DeploymentPhase>(
-      allServices.map((s) => [s.id, s.status.phase]),
-    );
-    return getUnmetDependencies(service.id, phaseMap);
-  }, [service.id, allServices]);
+  const phaseMap = useMemo(
+    () => new Map<ServiceId, DeploymentPhase>(allServices.map((s) => [s.id, s.status.phase])),
+    [allServices],
+  );
+
+  const unmetDeps = useMemo(
+    () => getUnmetDependencies(service.id, phaseMap),
+    [service.id, phaseMap],
+  );
+
+  const runtimeWarnings = useMemo(
+    () => getRuntimeWarnings(service.id, phaseMap),
+    [service.id, phaseMap],
+  );
 
   const hasWarnings = (configWarnings.data?.warnings.length ?? 0) > 0;
+  const hasRuntimeWarnings = runtimeWarnings.length > 0;
   const isBlocked = unmetDeps.length > 0;
 
   const readiness: ReadinessLevel = useMemo(() => {
     if (isBlocked) return 'blocked';
     if (phase === 'failed') return 'failed';
     if (phase === 'not_installed' || phase === 'pending') {
-      return hasWarnings ? 'warnings' : 'idle';
+      return (hasWarnings || hasRuntimeWarnings) ? 'warnings' : 'idle';
     }
-    if (phase === 'healthy' && !hasWarnings) return 'healthy';
-    if (isRunning && !hasWarnings) return 'deployed';
-    if (hasWarnings) return 'warnings';
+    if (phase === 'healthy' && !hasWarnings && !hasRuntimeWarnings) return 'healthy';
+    if (isRunning && !hasWarnings && !hasRuntimeWarnings) return 'deployed';
+    if (hasWarnings || hasRuntimeWarnings) return 'warnings';
     return 'idle';
-  }, [phase, isBlocked, hasWarnings, isRunning]);
+  }, [phase, isBlocked, hasWarnings, hasRuntimeWarnings, isRunning]);
 
   const readinessTooltip = useMemo(() => {
     if (isBlocked) return `Requires: ${unmetDeps.map((d) => d.name).join(', ')} (not deployed)`;
     if (phase === 'failed') return 'Deployment failed';
-    if (phase === 'healthy' && !hasWarnings) return 'Healthy';
-    if (isRunning && !hasWarnings) return 'Deployed';
-    if (hasWarnings) return `${configWarnings.data?.warnings.length ?? 0} config warning(s)`;
+    const parts: string[] = [];
+    if (hasWarnings) parts.push(`${configWarnings.data?.warnings.length ?? 0} config warning(s)`);
+    if (hasRuntimeWarnings) parts.push(runtimeWarnings.join('; '));
+    if (parts.length > 0) return parts.join(' | ');
+    if (phase === 'healthy') return 'Healthy';
+    if (isRunning) return 'Deployed';
     return 'Ready to deploy';
-  }, [phase, isBlocked, hasWarnings, isRunning, unmetDeps, configWarnings.data]);
+  }, [phase, isBlocked, hasWarnings, hasRuntimeWarnings, isRunning, unmetDeps, configWarnings.data, runtimeWarnings]);
 
   return (
     <div

@@ -16,5 +16,6 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["src/**/*", "../shared/src/**/*"]
+  "include": ["src/**/*", "../shared/src/**/*"],
+  "exclude": ["../shared/src/__tests__/**/*"]
 }

@@ -272,6 +272,15 @@ export interface KeycloakConfig {
   };
 }
 
+export interface MockAcConfig {
+  replicaCount: number;
+  image: { repository: string; tag: string; pullPolicy: string };
+  service: { type: string; port: number; targetPort: number };
+  config: { resourceID: string; baseURL: string };
+  resources: ResourceSpec;
+  ingress: { enabled: boolean; path: string };
+}
+
 export type ServiceConfig =
   | BaseConfig
   | PosixMapperConfig
@@ -282,4 +291,5 @@ export type ServiceConfig =
   | DoiConfig
   | DexConfig
   | KeycloakConfig
+  | MockAcConfig
   | Record<string, unknown>;

@@ -3,6 +3,8 @@ export type {
   ServiceId,
   ServiceDefinition,
   ServiceTier,
+  DeployPhaseNumber,
+  RuntimeDep,
   ChartSource,
   ResourceSpec,
   OidcConfig,
@@ -61,6 +63,13 @@ export type {
 } from './types/haproxy.js';
 
 export type {
+  TlsMode,
+  ServiceTrustStatus,
+  TlsStatus,
+  ApplyTrustResult,
+} from './types/tls.js';
+
+export type {
   ApiResponse,
   ServiceWithStatus,
   ServiceDetailResponse,
@@ -79,14 +88,18 @@ export {
   PLATFORM_HOSTNAME,
   TIER_ORDER,
   TIER_LABELS,
+  DEPLOY_PHASE_LABELS,
+  DEPLOY_PHASE_ORDER,
   DEPLOYMENT_PROFILES,
   getServicesByTier,
+  getServicesByPhase,
   getDeploymentOrder,
   getUnmetDependencies,
+  getRuntimeWarnings,
 } from './constants/catalog.js';
 export type { DeploymentProfileId, DeploymentProfile } from './constants/catalog.js';
 
-export { UVIC_COLORS, PHASE_COLORS, PHASE_LABELS, TIER_COLORS } from './constants/colors.js';
+export { UVIC_COLORS, PHASE_COLORS, PHASE_LABELS, TIER_COLORS, DEPLOY_PHASE_COLORS, DEPLOY_PHASE_BG } from './constants/colors.js';
 
 // Validation
 export {

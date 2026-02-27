@@ -12,7 +12,7 @@ import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { useNavigate } from 'react-router-dom';
 import type { ServiceWithStatus, ServiceId } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS, TIER_COLORS } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, SERVICE_IDS, DEPLOY_PHASE_COLORS, DEPLOY_PHASE_LABELS, DEPLOY_PHASE_ORDER } from '@skaha-orc/shared';
 import { ServiceNode } from './ServiceNode';
 
 const nodeTypes = { serviceNode: ServiceNode };
@@ -64,21 +64,42 @@ export function DependencyGraph({ services }: DependencyGraphProps) {
         data: {
           label: def.name,
           phase: svc?.status.phase ?? 'not_installed',
-          tierColor: TIER_COLORS[def.tier],
+          phaseColor: DEPLOY_PHASE_COLORS[def.deployPhase],
+          deployPhase: def.deployPhase,
         },
       };
     });
 
     const edges: Edge[] = [];
+    // Catalog dependencies (solid lines)
     for (const id of SERVICE_IDS) {
       const def = SERVICE_CATALOG[id];
       for (const dep of def.dependencies) {
         edges.push({
-          id: `${dep}-${id}`,
+          id: `dep-${dep}-${id}`,
           source: dep,
           target: id,
           animated: statusMap.get(id)?.status.phase === 'deploying',
         });
+      }
+    }
+
+    // Runtime dependencies (dashed lines)
+    for (const id of SERVICE_IDS) {
+      const def = SERVICE_CATALOG[id];
+      for (const rd of def.runtimeDeps) {
+        const depIds = Array.isArray(rd) ? rd : [rd];
+        for (const depId of depIds) {
+          // Skip if already a catalog dep
+          if (def.dependencies.includes(depId)) continue;
+          edges.push({
+            id: `rt-${depId}-${id}`,
+            source: depId,
+            target: id,
+            style: { strokeDasharray: '6 3', opacity: 0.4 },
+            animated: false,
+          });
+        }
       }
     }
 
@@ -100,7 +121,7 @@ export function DependencyGraph({ services }: DependencyGraphProps) {
   );
 
   return (
-    <div className="h-full w-full rounded-lg border border-gray-200 bg-white">
+    <div className="h-full w-full rounded-lg border border-gray-200 bg-white relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -114,6 +135,25 @@ export function DependencyGraph({ services }: DependencyGraphProps) {
         <Background />
         <Controls />
       </ReactFlow>
+      {/* Legend */}
+      <div className="absolute bottom-2 left-2 bg-white/90 border border-gray-200 rounded-md px-3 py-2 text-[10px] space-y-1.5">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {DEPLOY_PHASE_ORDER.map((p) => (
+            <span key={p} className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: DEPLOY_PHASE_COLORS[p] }} />
+              {p}. {DEPLOY_PHASE_LABELS[p]}
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-3 text-neutral-gray">
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-4 border-t border-gray-500" /> catalog dep
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-4 border-t border-dashed border-gray-400" /> runtime dep
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type { ServiceId, DeployAllProgress } from '@skaha-orc/shared';
 import { getDeploymentOrder, SERVICE_CATALOG } from '@skaha-orc/shared';
 import { helmDeploy, helmUninstall } from './helm.service.js';
 import { scaleDeployment } from './kubectl.service.js';
+import { injectCaCertIntoValues } from './bootstrap.service.js';
 import { eventBus } from '../sse/event-bus.js';
 import { logger } from '../logger.js';
 
@@ -11,6 +12,13 @@ export async function deployAll(
 ): Promise<DeployAllProgress> {
   const order = getDeploymentOrder(serviceIds);
   logger.info({ order, dryRun: options.dryRun }, 'Starting deploy-all');
+
+  // Ensure CA cert + volume mounts are in values before deploying (idempotent)
+  try {
+    await injectCaCertIntoValues();
+  } catch (err) {
+    logger.warn({ err }, 'Pre-deploy CA cert injection skipped (CA may not exist yet)');
+  }
 
   const progress: DeployAllProgress = {
     currentService: null,

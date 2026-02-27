@@ -7,6 +7,7 @@ import { getServiceStatus, getAllStatuses } from '../services/status.service.js'
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
+import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries } from '../services/bootstrap.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
 import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
@@ -688,7 +689,23 @@ export function findSemanticWarnings(serviceId: string, config: Record<string, u
     }
   }
 
-  // 3. Cavern identityManagerClass must be StandardIdentityManager
+  // 3. posix-mapper: warn if postgresql block is empty/missing
+  if (serviceId === 'posix-mapper') {
+    const pg = getNestedValue(config, 'postgresql');
+    if (!pg || (typeof pg === 'object' && Object.keys(pg as object).length === 0)) {
+      warnings.push('postgresql: empty — posix-mapper will fail with NumberFormatException (no DB pool)');
+    }
+  }
+
+  // 4. skaha: warn if gmsID is empty
+  if (serviceId === 'skaha') {
+    const gmsID = getNestedString(config, ['deployment', 'skaha', 'gmsID']);
+    if (!gmsID) {
+      warnings.push('deployment.skaha.gmsID: empty — group membership lookups will fail');
+    }
+  }
+
+  // 5. Cavern identityManagerClass must be StandardIdentityManager
   if (serviceId === 'cavern') {
     const cls = getNestedString(config, ['deployment', 'cavern', 'identityManagerClass']);
     if (cls && cls !== 'org.opencadc.auth.StandardIdentityManager') {
@@ -886,6 +903,12 @@ router.post('/services/:id/deploy', async (req, res) => {
       });
       return;
     }
+
+    // Ensure CA cert + volume mounts are in values before deploying
+    try { await injectCaCertIntoValues(); } catch { /* CA may not exist yet */ }
+    try { await syncPosixMapperDbConfig(); } catch { /* best-effort */ }
+    try { await syncGmsId(); } catch { /* best-effort */ }
+    try { await syncRegistryEntries(); } catch { /* best-effort */ }
 
     const result = await helmDeploy(serviceId, { dryRun });
     if (!result.success) {

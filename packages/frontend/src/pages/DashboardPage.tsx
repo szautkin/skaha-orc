@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, Square, RotateCcw, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
-import { SERVICE_CATALOG, TIER_ORDER, TIER_LABELS, getServicesByTier } from '@skaha-orc/shared';
-import type { ServiceTier, DeploymentPhase } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, DEPLOY_PHASE_ORDER, DEPLOY_PHASE_LABELS, DEPLOY_PHASE_COLORS, getServicesByPhase } from '@skaha-orc/shared';
+import type { DeployPhaseNumber, DeploymentPhase } from '@skaha-orc/shared';
 import { useStopAll, usePauseAll, useResumeAll } from '@/hooks/use-services';
 import { useServicesLive } from '@/hooks/use-services-live';
 import { usePreflight } from '@/hooks/use-preflight';
@@ -13,7 +13,7 @@ import { SetupWizard } from '@/components/setup/SetupWizard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { toast } from 'sonner';
 
-const servicesByTier = getServicesByTier();
+const servicesByPhase = getServicesByPhase();
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -22,10 +22,11 @@ export function DashboardPage() {
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem('setup-dismissed') === 'true',
   );
-  const [collapsed, setCollapsed] = useState<Record<ServiceTier, boolean>>({
-    core: false,
-    recommended: false,
-    site: true,
+  const [collapsed, setCollapsed] = useState<Record<DeployPhaseNumber, boolean>>({
+    1: false,
+    2: false,
+    3: false,
+    4: false,
   });
   const stopAll = useStopAll();
   const pauseAll = usePauseAll();
@@ -75,8 +76,8 @@ export function DashboardPage() {
   const runnableIds = svcList.filter((s) => RUNNING.has(s.status.phase)).map((s) => s.id);
   const pausedIds = svcList.filter((s) => s.status.phase === 'paused').map((s) => s.id);
 
-  const toggleTier = (tier: ServiceTier) => {
-    setCollapsed((prev) => ({ ...prev, [tier]: !prev[tier] }));
+  const togglePhase = (phase: DeployPhaseNumber) => {
+    setCollapsed((prev) => ({ ...prev, [phase]: !prev[phase] }));
   };
 
   return (
@@ -148,21 +149,24 @@ export function DashboardPage() {
         </div>
 
         <div className="col-span-2 overflow-auto space-y-4">
-          {TIER_ORDER.map((tier) => {
-            const ids = servicesByTier[tier];
-            const isCollapsed = collapsed[tier];
+          {DEPLOY_PHASE_ORDER.map((phase) => {
+            const ids = servicesByPhase[phase];
+            if (ids.length === 0) return null;
+            const isCollapsed = collapsed[phase];
+            const phaseColor = DEPLOY_PHASE_COLORS[phase];
             return (
-              <div key={tier}>
+              <div key={phase}>
                 <button
-                  className="flex items-center gap-1.5 text-xs font-semibold text-neutral-gray uppercase tracking-wider mb-2 hover:text-gray-700"
-                  onClick={() => toggleTier(tier)}
+                  className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider mb-2 hover:text-gray-700"
+                  style={{ color: phaseColor }}
+                  onClick={() => togglePhase(phase)}
                 >
                   {isCollapsed ? (
                     <ChevronRight className="w-3.5 h-3.5" />
                   ) : (
                     <ChevronDown className="w-3.5 h-3.5" />
                   )}
-                  {TIER_LABELS[tier]} ({ids.length})
+                  Phase {phase}: {DEPLOY_PHASE_LABELS[phase]} ({ids.length})
                 </button>
                 {!isCollapsed && (
                   <div className="grid grid-cols-2 gap-3">

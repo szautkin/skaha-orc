@@ -231,9 +231,10 @@ function setNestedVal(obj: Record<string, unknown>, path: string, value: unknown
   current[keys[keys.length - 1]!] = value;
 }
 
-async function injectCaCertIntoValues(): Promise<void> {
+export async function injectCaCertIntoValues(): Promise<void> {
   const caPem = await readFile(CA_CERT_PATH, 'utf-8');
   const caB64 = Buffer.from(caPem).toString('base64');
+
   let updated = 0;
 
   for (const [serviceId, secretName] of Object.entries(CACERT_SECRET_NAMES)) {
@@ -245,10 +246,17 @@ async function injectCaCertIntoValues(): Promise<void> {
       const secrets = ((data.secrets ?? {}) as Record<string, Record<string, string>>);
       let changed = false;
 
-      // Inject cert secret
+      // Inject cert secret — OpenCADC containers auto-import ca.crt via update-ca-trust
       if (!secrets[secretName]?.['ca.crt'] || secrets[secretName]['ca.crt'].length <= 10) {
         if (!secrets[secretName]) secrets[secretName] = {};
         secrets[secretName]['ca.crt'] = caB64;
+        data.secrets = secrets;
+        changed = true;
+      }
+
+      // Clean up stale truststore.p12 — not needed, OpenCADC containers use update-ca-trust
+      if (secrets[secretName]?.['truststore.p12']) {
+        delete secrets[secretName]['truststore.p12'];
         data.secrets = secrets;
         changed = true;
       }
@@ -274,6 +282,31 @@ async function injectCaCertIntoValues(): Promise<void> {
           setNestedVal(data, volsKey, vols);
           changed = true;
         }
+
+        // Clean up stale JAVA_TOOL_OPTIONS — breaks trust chain by overriding JVM defaults
+        const envKey = `${prefix}.extraEnv`;
+        const envArr = getNestedArray(data, envKey) as Record<string, unknown>[] | undefined;
+        if (envArr) {
+          const filtered = envArr.filter((e) => e.name !== 'JAVA_TOOL_OPTIONS');
+          if (filtered.length !== envArr.length) {
+            if (filtered.length > 0) {
+              setNestedVal(data, envKey, filtered);
+            } else {
+              // Remove empty extraEnv array entirely
+              const parentPath = prefix;
+              const parentKeys = parentPath.split('.');
+              let parent: unknown = data;
+              for (const k of parentKeys) {
+                if (parent == null || typeof parent !== 'object') break;
+                parent = (parent as Record<string, unknown>)[k];
+              }
+              if (parent && typeof parent === 'object') {
+                delete (parent as Record<string, unknown>).extraEnv;
+              }
+            }
+            changed = true;
+          }
+        }
       }
 
       if (changed) {
@@ -287,6 +320,138 @@ async function injectCaCertIntoValues(): Promise<void> {
 
   if (updated > 0) {
     logger.info({ updated }, 'Injected CA cert and volume mounts into service values files');
+  }
+}
+
+/**
+ * Reads DB credentials from the standalone posix-mapper-postgres values file
+ * and writes the `postgresql` JDBC connection block into posix-mapper-values.yaml.
+ * Without this, posix-mapper's catalina.properties has no DB pool vars and
+ * throws NumberFormatException on startup.
+ */
+export async function syncPosixMapperDbConfig(): Promise<void> {
+  const pmDbDef = SERVICE_CATALOG['posix-mapper-db'];
+  const pmDef = SERVICE_CATALOG['posix-mapper'];
+  if (!pmDbDef?.valuesFile || !pmDef?.valuesFile) return;
+
+  try {
+    const dbData = await readValuesFile(pmDbDef.valuesFile);
+    const pmData = await readValuesFile(pmDef.valuesFile);
+
+    const pgAuth = (dbData as Record<string, unknown>).postgres as Record<string, unknown> | undefined;
+    if (!pgAuth?.auth) return;
+
+    const auth = pgAuth.auth as Record<string, string>;
+    const database = auth.database || 'posixmapper';
+    const schema = auth.schema || 'mapping';
+    const username = auth.username || 'posixmapper';
+    const password = auth.password || 'posixmapper';
+
+    const pgBlock = {
+      maxActive: 8,
+      url: `jdbc:postgresql://posix-mapper-postgres.skaha-system:5432/${database}`,
+      schema,
+      auth: { username, password },
+    };
+
+    const existing = pmData.postgresql as Record<string, unknown> | undefined;
+    // Skip if already populated with a real URL
+    if (existing?.url && typeof existing.url === 'string' && existing.url.includes('postgresql://')) {
+      return;
+    }
+
+    pmData.postgresql = pgBlock;
+    await writeValuesFile(pmDef.valuesFile, pmData);
+    logger.info('Synced posix-mapper DB config from posix-mapper-postgres values');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync posix-mapper DB config');
+  }
+}
+
+/**
+ * Reads the GMS resource ID from posix-mapper values and fans it out to
+ * skaha, science-portal, cavern, storage-ui, and doi values files.
+ */
+const GMS_ID_PATHS: Record<string, string> = {
+  skaha: 'deployment.skaha.gmsID',
+  'science-portal': 'deployment.sciencePortal.gmsID',
+  cavern: 'deployment.cavern.gmsID',
+  'storage-ui': 'deployment.storageUI.gmsID',
+  doi: 'deployment.doi.gmsID',
+};
+
+export async function syncGmsId(): Promise<void> {
+  const pmDef = SERVICE_CATALOG['posix-mapper'];
+  if (!pmDef?.valuesFile) return;
+
+  try {
+    const pmData = await readValuesFile(pmDef.valuesFile);
+    const deployment = pmData.deployment as Record<string, unknown> | undefined;
+    const posixMapper = deployment?.posixMapper as Record<string, unknown> | undefined;
+    const gmsID = posixMapper?.gmsID;
+    if (!gmsID || typeof gmsID !== 'string') return;
+
+    let updated = 0;
+    for (const [svcId, path] of Object.entries(GMS_ID_PATHS)) {
+      const def = SERVICE_CATALOG[svcId as keyof typeof SERVICE_CATALOG];
+      if (!def?.valuesFile) continue;
+      try {
+        const data = await readValuesFile(def.valuesFile);
+        const keys = path.split('.');
+        const currentVal = keys.reduce<unknown>((obj, k) => {
+          if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
+          return undefined;
+        }, data);
+
+        if (currentVal === gmsID) continue;
+
+        setNestedVal(data, path, gmsID);
+        await writeValuesFile(def.valuesFile, data);
+        updated++;
+      } catch {
+        continue;
+      }
+    }
+
+    if (updated > 0) {
+      logger.info({ gmsID, updated }, 'Synced gmsID to service values files');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync gmsID');
+  }
+}
+
+/**
+ * Ensures the IVOA registry (reg-values.yaml) has a GMS service entry.
+ * If mock-ac is in the catalog and no GMS entry exists, auto-adds one.
+ */
+export async function syncRegistryEntries(): Promise<void> {
+  const regDef = SERVICE_CATALOG['reg'];
+  if (!regDef?.valuesFile) return;
+
+  try {
+    const regData = await readValuesFile(regDef.valuesFile);
+    const app = (regData.application ?? {}) as Record<string, unknown>;
+    const entries = (app.serviceEntries ?? []) as Array<{ id: string; url: string }>;
+
+    const hasGms = entries.some((e) => e.id.includes('/gms'));
+    if (hasGms) return;
+
+    // Check if mock-ac is in the catalog (it provides GMS)
+    const mockAcDef = SERVICE_CATALOG['mock-ac' as keyof typeof SERVICE_CATALOG];
+    if (!mockAcDef) return;
+
+    const hostname = (regData.global as Record<string, unknown>)?.hostname ?? PLATFORM_HOSTNAME;
+    entries.push({
+      id: 'ivo://cadc.nrc.ca/gms',
+      url: `https://${hostname}/ac/capabilities`,
+    });
+    app.serviceEntries = entries;
+    regData.application = app;
+    await writeValuesFile(regDef.valuesFile, regData);
+    logger.info('Auto-registered GMS (mock-ac) in IVOA registry');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync registry entries');
   }
 }
 

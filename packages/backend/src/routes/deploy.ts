@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { ServiceId, DeploymentPhase } from '@skaha-orc/shared';
-import { deployAllRequestSchema, SERVICE_CATALOG } from '@skaha-orc/shared';
+import { deployAllRequestSchema, SERVICE_CATALOG, getRuntimeWarnings } from '@skaha-orc/shared';
 import { getAllStatuses } from '../services/status.service.js';
 import { deployAll, stopAll, pauseAll, resumeAll } from '../services/deploy.service.js';
 import { eventBus } from '../sse/event-bus.js';
@@ -86,8 +86,25 @@ router.post('/deploy-all', async (req, res) => {
       return;
     }
 
+    // Compute runtime warnings (non-blocking) — these don't prevent deploy but warn
+    // that services may fail at runtime without their runtime dependencies.
+    // Treat selected services as "will be running" for warning purposes.
+    const runtimePhaseMap = new Map(phaseMap);
+    for (const id of selectedSet) {
+      if (!runtimePhaseMap.has(id) || runtimePhaseMap.get(id) === 'not_installed') {
+        runtimePhaseMap.set(id, 'deployed' as DeploymentPhase);
+      }
+    }
+    const runtimeWarnings: { serviceId: ServiceId; warnings: string[] }[] = [];
+    for (const id of selectedSet) {
+      const warnings = getRuntimeWarnings(id as ServiceId, runtimePhaseMap);
+      if (warnings.length > 0) {
+        runtimeWarnings.push({ serviceId: id as ServiceId, warnings });
+      }
+    }
+
     const progress = await deployAll(serviceIds as ServiceId[], { dryRun });
-    res.json({ success: true, data: progress });
+    res.json({ success: true, data: progress, runtimeWarnings });
   } catch (err) {
     logger.error({ err }, 'Deploy-all failed');
     res.status(500).json({ success: false, error: 'Deploy-all failed' });

@@ -1,5 +1,5 @@
 import type { DeploymentPhase } from '../types/deployment.js';
-import type { ServiceTier } from '../types/services.js';
+import type { ServiceTier, DeployPhaseNumber } from '../types/services.js';
 
 export const UVIC_COLORS = {
   congressBlue: '#005493',
@@ -39,4 +39,18 @@ export const PHASE_LABELS: Record<DeploymentPhase, string> = {
   paused: 'Paused',
   failed: 'Failed',
   uninstalling: 'Uninstalling',
+};
+
+export const DEPLOY_PHASE_COLORS: Record<DeployPhaseNumber, string> = {
+  1: '#94a3b8', // slate-400 — Foundation
+  2: '#8b5cf6', // violet-500 — Identity & Discovery
+  3: UVIC_COLORS.congressBlue, // Core Services
+  4: UVIC_COLORS.successGreen, // Session & UI
+};
+
+export const DEPLOY_PHASE_BG: Record<DeployPhaseNumber, string> = {
+  1: '#f1f5f9', // slate-100
+  2: '#f5f3ff', // violet-50
+  3: '#e8f4fd', // lightBlue
+  4: '#f0fdf4', // green-50
 };

@@ -1,5 +1,10 @@
 export type ServiceTier = 'core' | 'recommended' | 'site';
 
+export type DeployPhaseNumber = 1 | 2 | 3 | 4;
+
+/** A single service ID, or an array of alternatives where any one satisfies the dep. */
+export type RuntimeDep = ServiceId | ServiceId[];
+
 export const SERVICE_IDS = [
   'base',
   'haproxy',
@@ -7,6 +12,7 @@ export const SERVICE_IDS = [
   'volumes',
   'posix-mapper-db',
   'posix-mapper',
+  'mock-ac',
   'skaha',
   'cavern',
   'science-portal',
@@ -30,6 +36,8 @@ export interface ServiceDefinition {
   description: string;
   namespace: string;
   dependencies: ServiceId[];
+  runtimeDeps: RuntimeDep[];
+  deployPhase: DeployPhaseNumber;
   chartSource: ChartSource;
   valuesFile: string | null;
   tier: ServiceTier;

@@ -8,6 +8,9 @@ import type {
   UploadCaRequest,
   PreflightResult,
   PlatformOidcSettings,
+  TlsStatus,
+  ServiceTrustStatus,
+  ApplyTrustResult,
 } from '@skaha-orc/shared';
 
 const BASE = '/api';
@@ -166,6 +169,19 @@ export const api = {
       `/services/${id}/test`,
       { method: 'POST' },
     ),
+
+  getTlsStatus: () => request<TlsStatus>('/tls/status'),
+
+  getServiceTrust: () => request<ServiceTrustStatus[]>('/tls/service-trust'),
+
+  applyTrust: () =>
+    request<ApplyTrustResult>('/tls/apply-trust', { method: 'POST' }),
+
+  uploadLeCert: (certPem: string, keyPem: string) =>
+    request<TlsStatus>('/tls/upload-le-cert', {
+      method: 'POST',
+      body: JSON.stringify({ certPem, keyPem }),
+    }),
 };
 
 export function createSSEStream(path: string, onMessage: (data: unknown) => void): () => void {

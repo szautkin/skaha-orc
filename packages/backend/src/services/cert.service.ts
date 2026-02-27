@@ -279,6 +279,7 @@ export async function generateHAProxyCert(opts: {
   return getHAProxyCertInfo();
 }
 
+
 export async function updateCertSecret(
   serviceId: ServiceId,
   secretName: string,

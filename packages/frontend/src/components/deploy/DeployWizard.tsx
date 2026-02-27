@@ -1,14 +1,14 @@
 import { useState, useMemo } from 'react';
-import { Play, Loader2, AlertTriangle, Lock } from 'lucide-react';
+import { Play, Loader2, AlertTriangle, Lock, Info } from 'lucide-react';
 import type { ServiceId, DeploymentProfileId, DeploymentPhase } from '@skaha-orc/shared';
 import {
   SERVICE_CATALOG,
-  SERVICE_IDS,
   DEPLOYMENT_PROFILES,
-  TIER_ORDER,
-  TIER_LABELS,
+  DEPLOY_PHASE_ORDER,
+  DEPLOY_PHASE_LABELS,
   getDeploymentOrder,
-  getServicesByTier,
+  getServicesByPhase,
+  getRuntimeWarnings,
 } from '@skaha-orc/shared';
 import { useDeployAll } from '@/hooks/use-deploy';
 import { useServicesLive } from '@/hooks/use-services-live';
@@ -38,7 +38,7 @@ export function DeployWizard() {
   const deployAll = useDeployAll();
   const { data: allServices } = useServicesLive();
 
-  const servicesByTier = useMemo(() => getServicesByTier(), []);
+  const servicesByPhase = useMemo(() => getServicesByPhase(), []);
 
   const activeProfile = useMemo((): DeploymentProfileId | 'custom' => {
     for (const profile of DEPLOYMENT_PROFILES) {
@@ -77,6 +77,27 @@ export function DeployWizard() {
 
   const hasUnmetDeps = externalUnmetDeps.length > 0;
   const missingDepNames = [...new Set(externalUnmetDeps.map((d) => d.depName))];
+
+  const runtimeWarnings = useMemo(() => {
+    const phaseMap = new Map<ServiceId, DeploymentPhase>(
+      (allServices ?? []).map((s) => [s.id, s.status.phase]),
+    );
+    // Also treat selected services as "will be running" for the purpose of warnings
+    for (const id of selected) {
+      if (!phaseMap.has(id) || phaseMap.get(id) === 'not_installed') {
+        phaseMap.set(id, 'deployed');
+      }
+    }
+    const warnings: { serviceId: ServiceId; serviceName: string; warning: string }[] = [];
+    for (const id of selected) {
+      for (const w of getRuntimeWarnings(id, phaseMap)) {
+        warnings.push({ serviceId: id, serviceName: SERVICE_CATALOG[id].name, warning: w });
+      }
+    }
+    return warnings;
+  }, [selected, allServices]);
+
+  const hasRuntimeWarnings = runtimeWarnings.length > 0;
 
   const toggle = (id: ServiceId) => {
     const next = new Set(selected);
@@ -134,34 +155,39 @@ export function DeployWizard() {
           </div>
         </div>
 
-        {/* Tier-grouped service selection */}
+        {/* Phase-grouped service selection */}
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Select Services</h3>
           <div className="space-y-4">
-            {TIER_ORDER.map((tier) => (
-              <div key={tier}>
-                <p className="text-xs font-semibold text-neutral-gray uppercase tracking-wider mb-2">
-                  {TIER_LABELS[tier]}
-                </p>
-                <div className="space-y-1.5 pl-1">
-                  {servicesByTier[tier].map((id) => {
-                    const def = SERVICE_CATALOG[id];
-                    return (
-                      <label key={id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(id)}
-                          onChange={() => toggle(id)}
-                          disabled={isRunning}
-                          className="rounded border-gray-300 text-congress-blue focus:ring-congress-blue"
-                        />
-                        <span>{def.name}</span>
-                      </label>
-                    );
-                  })}
+            {DEPLOY_PHASE_ORDER.map((phase) => {
+              const ids = servicesByPhase[phase];
+              if (ids.length === 0) return null;
+              return (
+                <div key={phase}>
+                  <p className="text-xs font-semibold text-neutral-gray uppercase tracking-wider mb-2">
+                    Phase {phase}: {DEPLOY_PHASE_LABELS[phase]}
+                  </p>
+                  <div className="space-y-1.5 pl-1">
+                    {ids.map((id) => {
+                      const def = SERVICE_CATALOG[id];
+                      return (
+                        <label key={id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(id)}
+                            onChange={() => toggle(id)}
+                            disabled={isRunning}
+                            className="rounded border-gray-300 text-congress-blue focus:ring-congress-blue"
+                          />
+                          <span>{def.name}</span>
+                          <span className="text-xs text-neutral-gray">({def.tier})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -195,6 +221,21 @@ export function DeployWizard() {
           <div className="flex items-start gap-2 bg-amber-50 border border-buttercup-yellow rounded-md p-3 text-sm text-amber-800">
             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <span>Both Dex and Keycloak are selected. Typically you only need one identity provider. Use Dex for dev/demo or Keycloak for production.</span>
+          </div>
+        )}
+
+        {/* Runtime dependency warnings (non-blocking) */}
+        {hasRuntimeWarnings && (
+          <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
+            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <div>
+              <span className="font-medium">Runtime warnings:</span> These services will install but may fail at runtime.
+              <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                {runtimeWarnings.map((w, i) => (
+                  <li key={i}><span className="font-medium">{w.serviceName}</span>: {w.warning}</li>
+                ))}
+              </ul>
+            </div>
           </div>
         )}
 

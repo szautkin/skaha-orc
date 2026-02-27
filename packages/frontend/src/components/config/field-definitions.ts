@@ -729,6 +729,36 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
       ],
     },
   ],
+  'mock-ac': [
+    {
+      title: 'Service Config',
+      fields: [
+        {
+          name: 'resourceID',
+          label: 'Resource ID',
+          type: 'text',
+          path: 'config.resourceID',
+        },
+        {
+          name: 'baseURL',
+          label: 'Base URL',
+          type: 'text',
+          path: 'config.baseURL',
+        },
+      ],
+    },
+    {
+      title: 'Image',
+      fields: [
+        { name: 'repository', label: 'Repository', type: 'text', path: 'image.repository' },
+        { name: 'tag', label: 'Tag', type: 'text', path: 'image.tag' },
+      ],
+    },
+    {
+      title: 'Resources',
+      fields: commonResources('resources'),
+    },
+  ],
   dex: [
     {
       title: 'Issuer',
