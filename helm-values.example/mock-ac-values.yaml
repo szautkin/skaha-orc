@@ -1,5 +1,7 @@
-# Mock Access Control — provides GMS (Group Management Service) for local dev.
-# Users and groups are passed to the container via environment variables.
+# Mock Access Control — example values
+# Provides GMS (Group Management Service) for local dev.
+# Hostnames are auto-configured by: npm run setup
+
 replicaCount: 1
 
 image:
@@ -14,7 +16,7 @@ service:
 
 config:
   resourceID: "ivo://cadc.nrc.ca/gms"
-  baseURL: "https://CHANGE_ME/ac"
+  baseURL: "https://haproxy.cadc.dao.nrc.ca/ac"
 
 resources:
   requests:

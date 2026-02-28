@@ -1,20 +1,20 @@
 # Skaha — example values
-# Replace placeholder values before deploying
+# Hostnames and secrets are auto-configured by: npm run setup
 
 deployment:
-  hostname: your-platform.example.com
+  hostname: haproxy.cadc.dao.nrc.ca
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca
 
 skaha:
-  registryURL: images.your-registry.example.com
+  registryURL: images.opencadc.org
   oidc:
-    uri: https://oidc.example.com/auth
-    clientID: CHANGE_ME
+    uri: https://haproxy.cadc.dao.nrc.ca/dex
+    clientID: science-portal
     clientSecret: CHANGE_ME
-    callbackURI: https://your-platform.example.com/skaha/oidc-callback
-    redirectURI: https://your-platform.example.com/skaha
+    callbackURI: https://haproxy.cadc.dao.nrc.ca/skaha/oidc-callback
+    redirectURI: https://haproxy.cadc.dao.nrc.ca/skaha
     scope: openid profile
 
 secrets:

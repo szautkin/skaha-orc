@@ -1,13 +1,14 @@
 # Storage UI — example values
+# Hostnames and secrets are auto-configured by: npm run setup
 
 deployment:
   storageUI:
     oidc:
-      uri: https://oidc.example.com/auth
+      uri: https://haproxy.cadc.dao.nrc.ca/dex
       clientID: storage-ui
       clientSecret: CHANGE_ME
-      redirectURI: https://your-platform.example.com/storage
-      callbackURI: https://your-platform.example.com/storage/oidc-callback
+      redirectURI: https://haproxy.cadc.dao.nrc.ca/storage
+      callbackURI: https://haproxy.cadc.dao.nrc.ca/storage/oidc-callback
       scope: openid profile
   extraHosts:
     - ip: "10.0.0.1"

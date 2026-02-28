@@ -3,6 +3,7 @@ import { createInterface } from 'readline';
 import { readdir, copyFile, stat, mkdir, readFile, writeFile, appendFile } from 'fs/promises';
 import { resolve, dirname, join } from 'path';
 import { execSync } from 'child_process';
+import { randomBytes } from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -114,8 +115,152 @@ async function stepExampleValues() {
   }
 }
 
+function generateSecret(length = 32) {
+  return randomBytes(length).toString('base64url').slice(0, length);
+}
+
+async function stepPlatformConfig() {
+  console.log(`\n${bold('4. Platform configuration')}`);
+  const helmDir = join(ROOT, 'helm-values');
+  const envPath = join(ROOT, '.env');
+
+  const entries = await readdir(helmDir).catch(() => []);
+  const yamlFiles = entries.filter((f) => f.endsWith('.yaml'));
+  if (yamlFiles.length === 0) {
+    warn('No values files to configure — skipping');
+    return;
+  }
+
+  // Check if already configured (no CHANGE_ME remaining)
+  let hasPlaceholders = false;
+  for (const file of yamlFiles) {
+    const content = await readFile(join(helmDir, file), 'utf-8');
+    if (content.includes('CHANGE_ME')) {
+      hasPlaceholders = true;
+      break;
+    }
+  }
+
+  if (!hasPlaceholders) {
+    ok('Values files already configured');
+    return;
+  }
+
+  if (!isTTY) {
+    warn('Non-interactive mode — edit CHANGE_ME placeholders in helm-values/ manually');
+    return;
+  }
+
+  // Ask for hostname
+  const DEFAULT_HOST = 'haproxy.cadc.dao.nrc.ca';
+  const hostname = (await ask(`Platform hostname [${DEFAULT_HOST}]: `)) || DEFAULT_HOST;
+
+  // Ask for admin password
+  const adminPassword = (await ask('Admin password for Dex login [Test123!]: ')) || 'Test123!';
+
+  // Generate bcrypt hash for Dex
+  let dexHash = '';
+  try {
+    const bcryptjs = await import('bcryptjs');
+    const bcrypt = bcryptjs.default ?? bcryptjs;
+    dexHash = bcrypt.hashSync(adminPassword, 10);
+  } catch {
+    warn('Could not generate bcrypt hash — set dex password hash manually');
+    dexHash = 'GENERATE_WITH_htpasswd';
+  }
+
+  // Auto-generate secrets and passwords
+  const sciencePortalSecret = generateSecret();
+  const storageUiSecret = generateSecret();
+  const posixMapperDbPassword = generateSecret(16);
+  const cavernDbPassword = generateSecret(16);
+  const keycloakPassword = generateSecret(16);
+
+  // Replacement map: pattern → value
+  // Order matters: more specific patterns first
+  const replacements = [
+    ['CHANGE_ME_science_portal_secret', sciencePortalSecret],
+    ['CHANGE_ME_storage_ui_secret', storageUiSecret],
+  ];
+
+  // Per-file replacements for CHANGE_ME (context-sensitive)
+  const fileReplacements = {
+    'dex-values.yaml': [
+      [/^(\s+hash:)\s*CHANGE_ME$/m, `$1 ${dexHash}`],
+      [/^(\s+secret:)\s*CHANGE_ME_science_portal_secret$/m, `$1 ${sciencePortalSecret}`],
+      [/^(\s+secret:)\s*CHANGE_ME_storage_ui_secret$/m, `$1 ${storageUiSecret}`],
+      [/admin@CHANGE_ME/, `admin@${hostname}`],
+    ],
+    'keycloak-values.yaml': [
+      [/adminPassword:\s*CHANGE_ME/, `adminPassword: ${keycloakPassword}`],
+    ],
+    'posix-mapper-postgres.yaml': [
+      [/password:\s*CHANGE_ME/, `password: ${posixMapperDbPassword}`],
+    ],
+    'cavern-values.yaml': [
+      [/password:\s*CHANGE_ME/, `password: ${cavernDbPassword}`],
+    ],
+    'science-portal-values.yaml': [
+      [/clientSecret:\s*CHANGE_ME/, `clientSecret: ${sciencePortalSecret}`],
+    ],
+    'skaha-values.yaml': [
+      [/clientSecret:\s*CHANGE_ME/, `clientSecret: ${sciencePortalSecret}`],
+    ],
+    'storage.yaml': [
+      [/clientSecret:\s*CHANGE_ME/, `clientSecret: ${storageUiSecret}`],
+    ],
+  };
+
+  let configured = 0;
+  for (const file of yamlFiles) {
+    const filePath = join(helmDir, file);
+    let content = await readFile(filePath, 'utf-8');
+    const original = content;
+
+    // Apply specific replacements for this file
+    const specific = fileReplacements[file];
+    if (specific) {
+      for (const [pattern, replacement] of specific) {
+        content = content.replace(pattern, replacement);
+      }
+    }
+
+    // Apply generic named-secret replacements
+    for (const [pattern, replacement] of replacements) {
+      content = content.replaceAll(pattern, replacement);
+    }
+
+    // Replace the default dev hostname if user chose a different one
+    if (hostname !== DEFAULT_HOST) {
+      content = content.replaceAll(DEFAULT_HOST, hostname);
+    }
+
+    if (content !== original) {
+      await writeFile(filePath, content);
+      configured++;
+    }
+  }
+
+  // Update .env with PLATFORM_HOSTNAME
+  if (await exists(envPath)) {
+    let envContent = await readFile(envPath, 'utf-8');
+    if (envContent.includes('PLATFORM_HOSTNAME=')) {
+      envContent = envContent.replace(/^PLATFORM_HOSTNAME=.*/m, `PLATFORM_HOSTNAME=${hostname}`);
+    } else {
+      envContent += `\nPLATFORM_HOSTNAME=${hostname}\n`;
+    }
+    await writeFile(envPath, envContent);
+  }
+
+  ok(`Configured ${configured} values file(s) for ${bold(hostname)}`);
+  info(`OIDC client secrets: auto-generated`);
+  info(`DB passwords: auto-generated`);
+  info(`Keycloak admin: admin / ${keycloakPassword}`);
+  info(`Dex admin: admin@${hostname} / ${adminPassword}`);
+}
+
 async function stepHelmCheck() {
-  console.log(`\n${bold('4. Helm CLI')}`);
+  console.log(`\n${bold('5. Helm CLI')}`);
   const out = run('helm version --short');
   if (out) {
     ok(`helm ${out}`);
@@ -126,7 +271,7 @@ async function stepHelmCheck() {
 }
 
 async function stepHelmRepos() {
-  console.log(`\n${bold('5. Helm chart repositories')}`);
+  console.log(`\n${bold('6. Helm chart repositories')}`);
   const repos = {
     'science-platform': 'https://images.opencadc.org/chartrepo/platform',
     'science-platform-client': 'https://images.opencadc.org/chartrepo/client',
@@ -157,7 +302,7 @@ async function stepHelmRepos() {
 }
 
 async function stepKubectlCheck() {
-  console.log(`\n${bold('6. Kubectl CLI')}`);
+  console.log(`\n${bold('7. Kubectl CLI')}`);
   const out = run('kubectl version --client -o yaml 2>/dev/null');
   if (out) {
     ok('kubectl available');
@@ -168,7 +313,7 @@ async function stepKubectlCheck() {
 }
 
 async function stepKubeContext() {
-  console.log(`\n${bold('7. Kubernetes context')}`);
+  console.log(`\n${bold('8. Kubernetes context')}`);
   const raw = run('kubectl config get-contexts -o name 2>/dev/null');
   if (!raw) {
     warn('Could not list kube contexts');
@@ -225,6 +370,7 @@ console.log(bold('  ╚═══════════════════
 await stepEnv();
 await stepDirectories();
 await stepExampleValues();
+await stepPlatformConfig();
 await stepHelmCheck();
 await stepHelmRepos();
 await stepKubectlCheck();

@@ -1,13 +1,14 @@
 # Science Portal — example values
+# Hostnames and secrets are auto-configured by: npm run setup
 
 deployment:
   sciencePortal:
     oidc:
-      uri: https://oidc.example.com/auth
+      uri: https://haproxy.cadc.dao.nrc.ca/dex
       clientID: science-portal
       clientSecret: CHANGE_ME
-      redirectURI: https://your-platform.example.com/science-portal
-      callbackURI: https://your-platform.example.com/science-portal/oidc-callback
+      redirectURI: https://haproxy.cadc.dao.nrc.ca/science-portal
+      callbackURI: https://haproxy.cadc.dao.nrc.ca/science-portal/oidc-callback
       scope: openid profile
   extraHosts:
     - ip: "10.0.0.1"

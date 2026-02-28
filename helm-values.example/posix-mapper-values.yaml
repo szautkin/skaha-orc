@@ -1,8 +1,9 @@
 # POSIX Mapper — example values
+# Hostnames are auto-configured by: npm run setup
 
 deployment:
   posixMapper:
-    oidcURI: https://oidc.example.com/auth
+    oidcURI: https://haproxy.cadc.dao.nrc.ca/dex
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca
