@@ -484,6 +484,25 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
   throw new Error(`No manifest renderer for kubectl service: ${serviceId}`);
 }
 
+/**
+ * Ensures a namespace exists, creating it if needed.
+ * Uses `kubectl create` with `--dry-run=client` piped to `kubectl apply`
+ * to avoid "last-applied-configuration" annotation issues.
+ */
+async function ensureNamespace(ns: string): Promise<void> {
+  try {
+    await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'get', 'namespace', ns,
+    ], { env: { ...process.env, ...kubeEnv() } });
+  } catch {
+    // Namespace doesn't exist — create it
+    await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'create', 'namespace', ns,
+    ], { env: { ...process.env, ...kubeEnv() } });
+    logger.info({ ns }, 'Created namespace');
+  }
+}
+
 async function kubectlApply(
   serviceId: ServiceId,
 ): Promise<{ success: boolean; output: string }> {
@@ -516,10 +535,25 @@ async function kubectlApply(
   });
 
   try {
+    // Extract namespace docs and ensure they exist before applying.
+    // This avoids both "namespace not found" and "last-applied-configuration" errors.
+    const docs = manifest.split(/^---$/m);
+    const nsDocs = docs.filter((d) => d.includes('kind: Namespace'));
+    const resourceDocs = docs.filter((d) => !d.includes('kind: Namespace'));
+
+    for (const nsDoc of nsDocs) {
+      const match = nsDoc.match(/name:\s*(\S+)/);
+      if (match?.[1]) {
+        await ensureNamespace(match[1]);
+      }
+    }
+
+    // Apply non-namespace resources
+    const resourceManifest = resourceDocs.join('\n---\n');
     const { stdout, stderr } = await execa(
       config.kubectlBinary,
-      [...kubeArgs(), 'apply', '--server-side', '--force-conflicts', '-f', '-'],
-      { input: manifest, env: { ...process.env, ...kubeEnv() } },
+      [...kubeArgs(), 'apply', '-f', '-'],
+      { input: resourceManifest, env: { ...process.env, ...kubeEnv() } },
     );
     const output = stdout + '\n' + stderr;
 
