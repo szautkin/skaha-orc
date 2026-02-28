@@ -1,6 +1,6 @@
 # DOI — example values (optional service)
 # Hostnames are auto-configured by: npm run setup
-# Bootstrap auto-syncs: gmsID
+# Bootstrap auto-syncs: gmsID, CA cert
 # NOTE: DataCite credentials must be configured manually for DOI minting.
 
 deployment:

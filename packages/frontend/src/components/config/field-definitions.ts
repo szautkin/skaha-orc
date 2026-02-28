@@ -143,7 +143,7 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           label: 'Node Name (local dev)',
           type: 'text',
           path: 'workload.nodeName',
-          placeholder: 'docker-desktop',
+          placeholder: 'auto-detected from cluster',
         },
       ],
     },

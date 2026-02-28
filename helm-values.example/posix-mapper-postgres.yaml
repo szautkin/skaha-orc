@@ -21,6 +21,9 @@ postgres:
           storage: 1Gi
   # Seed users inserted on fresh DB init. UIDs must match mock-ac users
   # and filesystem ownership. Without this, auto-assigned UIDs mismatch.
+  # Bootstrap also creates a personal group per user (GID = UID) to fix
+  # the posix-mapper bug where passwd has GID but no group record exists,
+  # causing "groups: cannot find name for group ID <uid>" in notebooks.
   seed:
     users:
       - username: admin

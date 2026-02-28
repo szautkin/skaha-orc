@@ -27,7 +27,8 @@ workload:
   pvcName: skaha-workload-cavern-pvc
   pvName: skaha-workload-pv
   reclaimPolicy: Retain
-  # Node name for local volume affinity (local dev only, ignored when NFS is used)
-  nodeName: docker-desktop
+  # Node name for local volume affinity (local dev only, ignored when NFS is used).
+  # Auto-detected by bootstrap from the cluster — override only if needed.
+  # nodeName: auto-detected
   accessModes:
     - ReadWriteMany

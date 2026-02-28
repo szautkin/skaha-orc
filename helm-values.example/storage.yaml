@@ -1,12 +1,19 @@
 # Storage UI — example values
 # Hostnames and secrets are auto-configured by: npm run setup
-# Bootstrap auto-syncs: gmsID, CA cert
+# Bootstrap auto-syncs: gmsID, CA cert, feature flags
 
 deployment:
   hostname: haproxy.cadc.dao.nrc.ca
   storageUI:
     registryURL: https://haproxy.cadc.dao.nrc.ca/reg
     themeName: src
+    # Feature flags for org.opencadc.vosui.properties — all enabled by default for OOBE.
+    # Bootstrap auto-sets these if missing.
+    batchDownload: true
+    batchUpload: true
+    externalLinks: true
+    paging: true
+    directDownload: true
     oidc:
       uri: https://haproxy.cadc.dao.nrc.ca/dex
       clientID: storage-ui

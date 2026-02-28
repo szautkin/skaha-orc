@@ -12,7 +12,7 @@ import { logger } from '../logger.js';
 import { kubeArgs, kubeEnv, helmContextArgs } from './kube-args.js';
 import { waitForHealthy } from './health.service.js';
 import { isHAProxyRunning, isHAProxyPaused, deployHAProxy, stopHAProxy, detectDeployMode } from './haproxy.service.js';
-import { fixCavernDirPermissions } from './bootstrap.service.js';
+import { fixCavernDirPermissions, provisionCavernHomeDirs } from './bootstrap.service.js';
 
 /** Extract useful fields from an execa error for logging. */
 function execaErrorDetail(err: unknown): Record<string, unknown> {
@@ -209,8 +209,11 @@ export async function helmDeploy(
     if (serviceId === 'cavern') {
       // Cavern creates /data/cavern/home and /data/cavern/projects with 750.
       // Users can't traverse into them. Fix permissions after pod is healthy.
+      // Also pre-create home dirs for seed users (workaround for CADC HttpUpload
+      // token bug that drops auth on PUT, blocking first-login home dir creation).
       waitForHealthy(serviceId)
         .then(() => fixCavernDirPermissions())
+        .then(() => provisionCavernHomeDirs())
         .catch((e) => logger.error({ serviceId, err: e }, 'Cavern post-deploy failed'));
     } else {
       waitForHealthy(serviceId).catch((e) =>
@@ -300,6 +303,9 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
     const wlAccessModes = (wl.accessModes ?? ['ReadWriteMany']) as string[];
     const wlAccessMode = wlAccessModes[0] || 'ReadWriteMany';
     const wlHostPath = String(wl.hostPath || hostPath || '/var/lib/k8s-pvs/science-platform');
+    // Node name is auto-detected by syncWorkloadNodeName() bootstrap
+    // and written to volumes.yaml before deploy. Fallback to docker-desktop
+    // only if bootstrap hasn't run yet (should not happen in normal flow).
     const wlNodeName = String(wl.nodeName || 'docker-desktop');
 
     const workloadPv: Record<string, unknown> = {

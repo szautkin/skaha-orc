@@ -179,6 +179,8 @@ const CACERT_SECRET_NAMES: Record<string, string> = {
   cavern: 'cavern-cacert-secret',
   'science-portal': 'science-portal-cacert-secret',
   'posix-mapper': 'posix-mapper-cacert-secret',
+  'storage-ui': 'storage-ui-cacert-secret',
+  doi: 'doi-cacert-secret',
 };
 
 // Map service → values path prefix for the volume mount arrays
@@ -187,6 +189,8 @@ const VOLUME_MOUNT_PREFIXES: Record<string, string> = {
   cavern: 'deployment.cavern',
   'science-portal': 'deployment.sciencePortal',
   'posix-mapper': 'deployment.posixMapper',
+  'storage-ui': 'deployment.storageUI',
+  doi: 'deployment.doi',
 };
 
 function getNestedArray(obj: Record<string, unknown>, path: string): unknown[] | undefined {
@@ -514,6 +518,45 @@ export async function syncPosixMapperAuthorizedClients(): Promise<void> {
 }
 
 /**
+ * Ensures storage-ui feature flags are set in values for org.opencadc.vosui.properties.
+ * Without these, the VOSpace UI lacks batch download/upload, paging, and direct download
+ * capabilities — confusing for first-time users.
+ */
+export async function syncStorageUiFeatureFlags(): Promise<void> {
+  const def = SERVICE_CATALOG['storage-ui'];
+  if (!def?.valuesFile) return;
+
+  const FLAGS: Record<string, boolean> = {
+    batchDownload: true,
+    batchUpload: true,
+    externalLinks: true,
+    paging: true,
+    directDownload: true,
+  };
+
+  try {
+    const data = await readValuesFile(def.valuesFile);
+    const storageUI = ((data.deployment as Record<string, unknown>)?.storageUI ?? {}) as Record<string, unknown>;
+
+    let changed = false;
+    for (const [flag, defaultVal] of Object.entries(FLAGS)) {
+      if (storageUI[flag] === undefined) {
+        storageUI[flag] = defaultVal;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      (data.deployment as Record<string, unknown>).storageUI = storageUI;
+      await writeValuesFile(def.valuesFile, data);
+      logger.info('Auto-set storage-ui feature flags (batchDownload, batchUpload, externalLinks, paging, directDownload)');
+    }
+  } catch (err) {
+    logger.debug({ err }, 'Could not sync storage-ui feature flags (values file may not exist yet)');
+  }
+}
+
+/**
  * Ensures Cavern rootOwner defaults to root/0/0 when empty.
  * Using any other uid/gid requires that user/group to exist in the container.
  */
@@ -568,13 +611,19 @@ export async function fixCavernDirPermissions(): Promise<void> {
 }
 
 /**
- * Seeds the posix-mapper database with initial user mappings if the
- * mapping.users table is empty.  Reads seed data from
- * posix-mapper-postgres values (postgres.seed.users).
+ * Seeds the posix-mapper database with initial user AND group mappings.
+ * Reads seed data from posix-mapper-postgres values (postgres.seed.users).
  *
- * This prevents the recurring problem where a fresh DB auto-assigns
+ * User seeding prevents the recurring problem where a fresh DB auto-assigns
  * new UIDs that don't match existing filesystem ownership, causing
  * Cavern's cadc-gms-1.0.14 TSVPosixPrincipalParser to NPE on null.
+ *
+ * Group seeding fixes a posix-mapper bug where creating a user (admin → UID 10000)
+ * sets GID=10000 in the passwd entry (admin:x:10000:10000:...) but does NOT create
+ * a matching group record in mapping.groups. When the notebook init container pulls
+ * from Redis to build /etc/group, the primary group is missing, causing:
+ *   "groups: cannot find name for group ID 10000"
+ * We create a personal group per user (like Linux useradd -U) with GID = UID.
  */
 export async function seedPosixMapperDb(): Promise<void> {
   const dbDef = SERVICE_CATALOG['posix-mapper-db'];
@@ -592,44 +641,72 @@ export async function seedPosixMapperDb(): Promise<void> {
       return;
     }
 
-    const username = String(auth.username || 'posixmapper');
+    const dbUser = String(auth.username || 'posixmapper');
     const database = String(auth.database || 'posixmapper');
     const schema = String(auth.schema || 'mapping');
 
-    // Check if the users table has any rows
-    const countResult = await kubectlExec(
+    // --- Seed users (only if table is empty) ---
+    const userCountResult = await kubectlExec(
       dbDef.namespace,
       'posix-mapper-postgres',
-      ['psql', '-U', username, '-d', database, '-t', '-c',
+      ['psql', '-U', dbUser, '-d', database, '-t', '-c',
        `SELECT COUNT(*) FROM ${schema}.users;`],
     );
 
-    const count = parseInt(countResult.trim(), 10);
-    if (count > 0) {
-      logger.debug({ count }, 'posix-mapper DB already has user entries, skipping seed');
-      return;
+    const userCount = parseInt(userCountResult.trim(), 10);
+    if (userCount === 0) {
+      const userStatements: string[] = [];
+      for (const u of users) {
+        const uid = Number(u.uid);
+        const uname = String(u.username || '').replace(/'/g, "''");
+        if (!uname || isNaN(uid)) continue;
+        userStatements.push(
+          `INSERT INTO ${schema}.users (uid, username) VALUES (${uid}, '${uname}') ON CONFLICT DO NOTHING;`,
+        );
+      }
+
+      if (userStatements.length > 0) {
+        await kubectlExec(
+          dbDef.namespace,
+          'posix-mapper-postgres',
+          ['psql', '-U', dbUser, '-d', database, '-c', userStatements.join(' ')],
+        );
+        logger.info({ users: users.map((u) => u.username) }, 'Seeded posix-mapper DB with initial user mappings');
+      }
     }
 
-    // DB is empty — seed it
-    const statements: string[] = [];
+    // --- Seed personal groups (always check, even if users were already seeded) ---
+    // posix-mapper creates users but does NOT create matching personal groups.
+    // Without the group record, notebook init containers fail with
+    // "groups: cannot find name for group ID <uid>".
+    const groupStatements: string[] = [];
     for (const u of users) {
       const uid = Number(u.uid);
       const uname = String(u.username || '').replace(/'/g, "''");
       if (!uname || isNaN(uid)) continue;
-      statements.push(
-        `INSERT INTO ${schema}.users (uid, username) VALUES (${uid}, '${uname}') ON CONFLICT DO NOTHING;`,
+
+      // Personal group URI follows CADC convention:
+      // ivo://default-group-should-be-ignored.opencadc.org/default-group?<username>
+      const groupUri = `ivo://default-group-should-be-ignored.opencadc.org/default-group?${uname}`;
+      // Use conditional insert to avoid duplicates (safe even without unique constraints)
+      groupStatements.push(
+        `INSERT INTO ${schema}.groups (gid, groupuri) SELECT ${uid}, '${groupUri}' WHERE NOT EXISTS (SELECT 1 FROM ${schema}.groups WHERE gid = ${uid});`,
       );
     }
 
-    if (statements.length === 0) return;
-
-    await kubectlExec(
-      dbDef.namespace,
-      'posix-mapper-postgres',
-      ['psql', '-U', username, '-d', database, '-c', statements.join(' ')],
-    );
-
-    logger.info({ users: users.map((u) => u.username) }, 'Seeded posix-mapper DB with initial user mappings');
+    if (groupStatements.length > 0) {
+      try {
+        await kubectlExec(
+          dbDef.namespace,
+          'posix-mapper-postgres',
+          ['psql', '-U', dbUser, '-d', database, '-c', groupStatements.join(' ')],
+        );
+        logger.info({ users: users.map((u) => u.username) }, 'Ensured personal groups exist in posix-mapper DB');
+      } catch (groupErr) {
+        // Groups table may not exist yet (Hibernate creates on first posix-mapper startup)
+        logger.debug({ err: groupErr }, 'Could not seed personal groups (Hibernate may not have created tables yet)');
+      }
+    }
   } catch (err) {
     // This is best-effort — may fail if posix-mapper-db isn't deployed yet
     logger.debug({ err }, 'Could not seed posix-mapper DB (may not be deployed yet)');
@@ -966,6 +1043,96 @@ export async function loadKindImages(): Promise<void> {
     }
   } catch {
     // Not a Kind cluster or kind CLI not available
+  }
+}
+
+/**
+ * Auto-detects the Kubernetes node name and updates volumes.yaml so the
+ * workload PV gets the correct nodeAffinity for local volumes.
+ * Without this, the PV is stuck on "docker-desktop" and can't schedule
+ * on Kind or other local clusters with different node names.
+ */
+export async function syncWorkloadNodeName(): Promise<void> {
+  const volumesDef = SERVICE_CATALOG['volumes'];
+  if (!volumesDef?.valuesFile) return;
+
+  try {
+    const data = await readValuesFile(volumesDef.valuesFile);
+    const wl = (data.workload ?? {}) as Record<string, unknown>;
+    const currentName = String(wl.nodeName || '');
+
+    // Only auto-detect if unset or still the default placeholder
+    if (currentName && currentName !== 'docker-desktop') return;
+
+    // Get actual node name from the cluster
+    const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'get', 'nodes',
+      '-o', 'jsonpath={.items[0].metadata.name}',
+    ], { env: { ...process.env, ...kubeEnv() }, timeout: 10_000 });
+
+    const nodeName = stdout.trim();
+    if (!nodeName || nodeName === currentName) return;
+
+    wl.nodeName = nodeName;
+    data.workload = wl;
+    await writeValuesFile(volumesDef.valuesFile, data);
+    logger.info({ from: currentName || '(empty)', to: nodeName }, 'Auto-detected workload PV node name');
+  } catch (err) {
+    // Cluster may not be reachable — keep existing value
+    logger.debug({ err }, 'Could not auto-detect workload node name (cluster may not be reachable)');
+  }
+}
+
+/**
+ * Pre-creates home directories inside the Cavern pod for all seed users.
+ * Works around a CADC HttpUpload bug where the bearer token is not
+ * forwarded on PUT requests, causing Cavern to reject home directory
+ * creation as unauthenticated. By pre-creating the dirs with correct
+ * ownership, first-login "just works" without hitting the PUT bug.
+ */
+export async function provisionCavernHomeDirs(): Promise<void> {
+  const cavernDef = SERVICE_CATALOG['cavern'];
+  const dbDef = SERVICE_CATALOG['posix-mapper-db'];
+  if (!cavernDef || !dbDef?.valuesFile) return;
+
+  try {
+    const dbData = await readValuesFile(dbDef.valuesFile);
+    const pg = (dbData.postgres ?? {}) as Record<string, unknown>;
+    const seed = (pg.seed ?? {}) as Record<string, unknown>;
+    const users = (seed.users ?? []) as Array<Record<string, unknown>>;
+
+    if (users.length === 0) return;
+
+    // Read GID start from posix-mapper values (default 900000 per CADC convention).
+    // The first group registered (skaha-users) gets gid.start as its GID.
+    const pmDef = SERVICE_CATALOG['posix-mapper'];
+    let gidStart = 900000;
+    if (pmDef?.valuesFile) {
+      try {
+        const pmData = await readValuesFile(pmDef.valuesFile);
+        const pm = ((pmData.deployment as Record<string, unknown>)?.posixMapper ?? {}) as Record<string, unknown>;
+        const minGid = Number(pm.minGID);
+        if (!isNaN(minGid) && minGid > 0) gidStart = minGid;
+      } catch { /* use default */ }
+    }
+
+    for (const u of users) {
+      const username = String(u.username || '');
+      const uid = Number(u.uid);
+      if (!username || isNaN(uid)) continue;
+
+      try {
+        await kubectlExec(cavernDef.namespace, 'cavern-tomcat', [
+          'sh', '-c',
+          `mkdir -p /data/cavern/home/${username} && chown ${uid}:${gidStart} /data/cavern/home/${username}`,
+        ]);
+        logger.info({ username, uid, gid: gidStart }, 'Provisioned Cavern home directory');
+      } catch (err) {
+        logger.debug({ username, err }, 'Could not provision Cavern home dir (may not be deployed yet)');
+      }
+    }
+  } catch (err) {
+    logger.debug({ err }, 'Could not provision Cavern home directories');
   }
 }
 
