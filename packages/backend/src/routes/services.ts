@@ -7,7 +7,7 @@ import { getServiceStatus, getAllStatuses } from '../services/status.service.js'
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
-import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages, syncOidcClientSecrets, syncDexRedirectUris } from '../services/bootstrap.service.js';
+import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages, syncOidcClientSecrets, syncDexRedirectUris, syncDbPasswords } from '../services/bootstrap.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
 import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
@@ -993,6 +993,7 @@ router.post('/services/:id/deploy', async (req, res) => {
     try { await syncBaseTraefikConfig(); } catch { /* best-effort */ }
     try { await syncTraefikTlsCert(); } catch { /* best-effort */ }
     try { await syncUrlProtocol(); } catch { /* best-effort */ }
+    try { await syncDbPasswords(); } catch { /* best-effort */ }
     try { await syncTraefikClusterIp(); } catch { /* best-effort */ }
     try { await loadKindImages(); } catch { /* best-effort */ }
     try { await syncPosixMapperDbConfig(); } catch { /* best-effort */ }

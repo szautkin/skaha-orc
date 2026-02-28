@@ -647,6 +647,40 @@ export async function syncDexBcryptHash(): Promise<void> {
 }
 
 /**
+ * Service IDs with a `postgres.auth.password` field that should not be CHANGE_ME.
+ * Generates a random password if it is, so the DB starts with a real credential.
+ * Must run BEFORE syncPosixMapperDbConfig() which propagates the password.
+ */
+const DB_PASSWORD_SERVICES = ['posix-mapper-db', 'cavern'] as const;
+
+export async function syncDbPasswords(): Promise<void> {
+  let updated = 0;
+
+  for (const serviceId of DB_PASSWORD_SERVICES) {
+    const def = SERVICE_CATALOG[serviceId as keyof typeof SERVICE_CATALOG];
+    if (!def?.valuesFile) continue;
+
+    try {
+      const data = await readValuesFile(def.valuesFile);
+      const pg = (data.postgres ?? {}) as Record<string, unknown>;
+      const auth = (pg.auth ?? {}) as Record<string, string>;
+
+      if (auth.password && !auth.password.includes('CHANGE_ME')) continue;
+
+      auth.password = randomBytes(16).toString('hex');
+      pg.auth = auth;
+      data.postgres = pg;
+      await writeValuesFile(def.valuesFile, data);
+      updated++;
+    } catch { continue; }
+  }
+
+  if (updated > 0) {
+    logger.info({ updated }, 'Auto-generated DB passwords for services with CHANGE_ME');
+  }
+}
+
+/**
  * Ensures Traefik (base chart) has cross-namespace discovery enabled.
  * Without this, Traefik in the `default` namespace cannot discover
  * IngressRoutes in `skaha-system`, and all services return 404.
