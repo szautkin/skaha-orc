@@ -9,12 +9,12 @@
 cavern:
   storageClassName: ""
   capacity: 100Gi
-  # For production: set NFS server + path
-  nfs:
-    server: your-nfs-server.example.com
-    path: /data/cavern
-  # For local dev: set hostPath instead (leave nfs.server empty)
-  # hostPath: /var/lib/k8s-pvs/science-platform
+  # For local dev: uses hostPath (default when nfs.server is empty)
+  hostPath: /var/lib/k8s-pvs/science-platform
+  # For production: set NFS server + path and remove hostPath
+  # nfs:
+  #   server: your-nfs-server.example.com
+  #   path: /data/cavern
 
 # Workload PV/PVC — used by Skaha session pods to access cavern storage.
 # Session pods run in the workload namespace (separate from platform services).

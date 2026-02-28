@@ -238,8 +238,8 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
     const nfsPath = String(nfs.path || '/data/cavern');
     const hostPath = String(cavern.hostPath || '');
 
-    // If NFS server is configured, use NFS; otherwise fall back to hostPath (local dev)
-    const useNfs = nfsServer.length > 0;
+    // If NFS server is configured (and not a placeholder), use NFS; otherwise hostPath (local dev)
+    const useNfs = nfsServer.length > 0 && !nfsServer.includes('example') && !nfsServer.includes('CHANGE_ME');
     const accessMode = useNfs ? 'ReadWriteMany' : 'ReadWriteOnce';
 
     const pvSourceLines = useNfs
@@ -355,15 +355,30 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
       `  volumeName: ${wlPvName}`,
     ];
 
-    // Ensure the workload namespace exists
-    const nsLines = [
+    // Ensure both namespaces exist (skaha-system may not exist on first run)
+    const sysNsLines = [
+      `apiVersion: v1`,
+      `kind: Namespace`,
+      `metadata:`,
+      `  name: ${def.namespace}`,
+    ];
+
+    const wlNsLines = [
       `apiVersion: v1`,
       `kind: Namespace`,
       `metadata:`,
       `  name: ${wlNamespace}`,
     ];
 
-    return [...pvLines, `---`, ...pvcLines, `---`, ...nsLines, `---`, ...wlPvLines, `---`, ...wlPvcLines].join('\n');
+    // Namespaces first, then PVs (cluster-scoped), then PVCs (namespaced)
+    return [
+      ...sysNsLines, `---`,
+      ...wlNsLines, `---`,
+      ...pvLines, `---`,
+      ...pvcLines, `---`,
+      ...wlPvLines, `---`,
+      ...wlPvcLines,
+    ].join('\n');
   }
 
   if (serviceId === 'posix-mapper-db') {
