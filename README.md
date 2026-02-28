@@ -45,40 +45,41 @@ packages/
 
 ## Service Catalog
 
-The platform manages 13 services deployed in dependency order across three tiers:
+The platform manages 14 services deployed in dependency order across three tiers:
 
 | # | Service | Tier | Description | Namespace |
 |---|---------|------|-------------|-----------|
 | 1 | **base** | core | Traefik ingress controller, TLS, and namespaces | default |
-| 2 | **reg** | core | IVOA Registry service (nginx) | skaha-system |
+| 2 | **reg** | core | IVOA Registry service | skaha-system |
 | 3 | **volumes** | core | PersistentVolume + PVC resources | skaha-system |
 | 4 | **posix-mapper-db** | core | Standalone PostgreSQL for posix-mapper | skaha-system |
 | 5 | **posix-mapper** | core | UID/GID mapping service with PostgreSQL | skaha-system |
-| 6 | **skaha** | core | Session management service with Redis | skaha-system |
-| 7 | **cavern** | recommended | VOSpace storage service with PostgreSQL UWS | skaha-system |
+| 6 | **cavern** | core | VOSpace storage service with PostgreSQL UWS | skaha-system |
+| 7 | **skaha** | core | Session management service with Redis | skaha-system |
 | 8 | **science-portal** | recommended | Web UI for launching sessions (OIDC + Redis) | skaha-system |
 | 9 | **storage-ui** | recommended | Storage browser with OIDC and Redis | skaha-system |
 | 10 | **haproxy** | site | Reverse proxy and load balancer | skaha-system |
-| 11 | **doi** | site | DOI minting service | skaha-system |
-| 12 | **dex** | site | Lightweight OIDC provider with static passwords (dev/demo) | skaha-system |
-| 13 | **keycloak** | site | Full-featured OIDC identity provider with admin console | skaha-system |
+| 11 | **mock-ac** | site | Mock IVOA GMS / user management service (dev/demo) | skaha-system |
+| 12 | **doi** | site | DOI minting service | skaha-system |
+| 13 | **dex** | site | Lightweight OIDC provider with static passwords (dev/demo) | skaha-system |
+| 14 | **keycloak** | site | Full-featured OIDC identity provider with admin console | skaha-system |
 
 ### Service Tiers
 
 | Tier | Description | Services |
 |------|-------------|----------|
-| **Core** | Required infrastructure — always deployed | base, reg, volumes, posix-mapper-db, posix-mapper, skaha |
-| **Recommended** | Standard user-facing services | cavern, science-portal, storage-ui |
-| **Site** | Site-specific or optional services | haproxy, doi, dex, keycloak |
+| **Core** | Required infrastructure — always deployed | base, reg, volumes, posix-mapper-db, posix-mapper, cavern, skaha |
+| **Recommended** | Standard user-facing services | science-portal, storage-ui |
+| **Site** | Site-specific or optional services | haproxy, mock-ac, doi, dex, keycloak |
 
 ### Deployment Profiles
 
 | Profile | Description | Includes |
 |---------|-------------|----------|
-| **Standard** (Dev/Demo) | Core + recommended + HAProxy + Dex | Quick setup with static passwords |
+| **Standard** (Dev/Demo) | Core + recommended + HAProxy + Dex + Mock AC | Quick setup with static passwords and mock group management |
 | **Production** | Core + recommended + HAProxy + Keycloak | Full IdP with admin console |
-| **Minimal** | Core infrastructure only | 6 core services |
-| **Full** | All 13 services | Includes both Dex and Keycloak |
+| **Minimal** | Core infrastructure only | 7 core services |
+| **Full** | All 14 services | Includes both Dex and Keycloak |
 
 ### Identity Providers
 
@@ -89,22 +90,40 @@ Skaha-Orc supports two OIDC identity providers:
 
 Choose between them via deployment profiles or by selecting individual services.
 
+### Deployment Order
+
+Services are deployed in four phases. Within each phase, topological sort ensures dependencies are satisfied:
+
+| Phase | Name | Services |
+|-------|------|----------|
+| 1 | **Foundation** | base, volumes |
+| 2 | **Identity & Discovery** | dex (or keycloak), mock-ac, haproxy, reg, posix-mapper-db |
+| 3 | **Core Services** | posix-mapper, cavern |
+| 4 | **Session & UI** | skaha, science-portal, storage-ui, doi |
+
+Topological order for the standard profile: `base → volumes → dex → haproxy → mock-ac → reg → posix-mapper-db → posix-mapper → cavern → skaha → science-portal → storage-ui`
+
+> **Runtime dependencies:** Most Java services (posix-mapper, skaha, cavern, science-portal, storage-ui) require an OIDC provider (Dex or Keycloak), a GMS service (mock-ac), and HAProxy to be running at runtime. These are not deploy-time blockers but will cause 500 errors if missing.
+
 ### Dependency Graph
 
 ```
 base (Traefik, namespaces)
-  ├─> haproxy (reverse proxy)
-  ├─> reg (IVOA Registry - nginx)
-  │     └─> posix-mapper-db (PostgreSQL)
-  │           └─> posix-mapper (UID/GID + PostgreSQL)
-  │                 ├─> skaha (Sessions + Redis)
-  │                 │     └─> science-portal (Web UI + Redis + OIDC)
-  │                 └─> cavern (VOSpace + PostgreSQL)
-  │                       ├─> storage-ui (Storage browser + Redis + OIDC)
-  │                       └─> doi (optional, DOI minting)
   ├─> volumes (PV + PVC)
+  │     └─> posix-mapper-db (PostgreSQL)
+  ├─> reg (IVOA Registry)
+  ├─> haproxy (reverse proxy)
+  ├─> mock-ac (mock GMS, dev/demo)
   ├─> dex (lightweight OIDC, dev/demo)
   └─> keycloak (full OIDC, production)
+
+reg + posix-mapper-db
+  └─> posix-mapper (UID/GID mapping)
+        └─> cavern (VOSpace storage)
+              ├─> skaha (session management)
+              │     └─> science-portal (Web UI)
+              ├─> storage-ui (storage browser)
+              └─> doi (DOI minting)
 ```
 
 ## Prerequisites
