@@ -1,6 +1,7 @@
 import { mkdir, readdir, copyFile, stat, readFile } from 'fs/promises';
 import { resolve, dirname } from 'path';
 import { execa } from 'execa';
+import bcrypt from 'bcryptjs';
 import type { PreflightCheck, PreflightResult } from '@skaha-orc/shared';
 import { PLATFORM_HOSTNAME, SERVICE_CATALOG } from '@skaha-orc/shared';
 import { config } from '../config.js';
@@ -402,6 +403,18 @@ export async function syncGmsId(): Promise<void> {
  * Ensures the IVOA registry (reg-values.yaml) has a GMS service entry.
  * If mock-ac is in the catalog and no GMS entry exists, auto-adds one.
  */
+/**
+ * Core services that must be registered in the IVOA registry.
+ * Without these entries, services that do registry lookups
+ * (e.g. science-portal looking up skaha) fail with
+ * "not configured in the Registry" errors.
+ */
+const REQUIRED_REGISTRY_ENTRIES: Array<{ idSuffix: string; pathPrefix: string }> = [
+  { idSuffix: 'skaha', pathPrefix: '/skaha/capabilities' },
+  { idSuffix: 'cavern', pathPrefix: '/cavern/capabilities' },
+  { idSuffix: 'posix-mapper', pathPrefix: '/posix-mapper/capabilities' },
+];
+
 export async function syncRegistryEntries(): Promise<void> {
   const regDef = SERVICE_CATALOG['reg'];
   if (!regDef?.valuesFile) return;
@@ -410,23 +423,35 @@ export async function syncRegistryEntries(): Promise<void> {
     const regData = await readValuesFile(regDef.valuesFile);
     const app = (regData.application ?? {}) as Record<string, unknown>;
     const entries = (app.serviceEntries ?? []) as Array<{ id: string; url: string }>;
-
-    const hasGms = entries.some((e) => e.id.includes('/gms'));
-    if (hasGms) return;
-
-    // Check if mock-ac is in the catalog (it provides GMS)
-    const mockAcDef = SERVICE_CATALOG['mock-ac' as keyof typeof SERVICE_CATALOG];
-    if (!mockAcDef) return;
-
     const hostname = (regData.global as Record<string, unknown>)?.hostname ?? PLATFORM_HOSTNAME;
-    entries.push({
-      id: 'ivo://cadc.nrc.ca/gms',
-      url: `https://${hostname}/ac/capabilities`,
-    });
-    app.serviceEntries = entries;
-    regData.application = app;
-    await writeValuesFile(regDef.valuesFile, regData);
-    logger.info('Auto-registered GMS (mock-ac) in IVOA registry');
+
+    let changed = false;
+
+    // Ensure all core service entries exist
+    for (const { idSuffix, pathPrefix } of REQUIRED_REGISTRY_ENTRIES) {
+      const fullId = `ivo://cadc.nrc.ca/${idSuffix}`;
+      if (!entries.some((e) => e.id === fullId)) {
+        entries.push({ id: fullId, url: `https://${hostname}${pathPrefix}` });
+        changed = true;
+      }
+    }
+
+    // Ensure GMS entry exists (if mock-ac is in the catalog)
+    const mockAcDef = SERVICE_CATALOG['mock-ac' as keyof typeof SERVICE_CATALOG];
+    if (mockAcDef && !entries.some((e) => e.id.includes('/gms'))) {
+      entries.push({
+        id: 'ivo://cadc.nrc.ca/gms',
+        url: `https://${hostname}/ac/capabilities`,
+      });
+      changed = true;
+    }
+
+    if (changed) {
+      app.serviceEntries = entries;
+      regData.application = app;
+      await writeValuesFile(regDef.valuesFile, regData);
+      logger.info('Auto-registered missing service entries in IVOA registry');
+    }
   } catch (err) {
     logger.warn({ err }, 'Failed to sync registry entries');
   }
@@ -584,6 +609,87 @@ export async function seedPosixMapperDb(): Promise<void> {
   } catch (err) {
     // This is best-effort — may fail if posix-mapper-db isn't deployed yet
     logger.debug({ err }, 'Could not seed posix-mapper DB (may not be deployed yet)');
+  }
+}
+
+/**
+ * Ensures every Dex staticPasswords entry has a valid bcrypt hash.
+ * Fresh installs have `hash: CHANGE_ME` which causes Dex to crash with
+ * "malformed bcrypt hash". This generates a default hash for the password
+ * "Test123!" so Dex can start out-of-box.
+ */
+export async function syncDexBcryptHash(): Promise<void> {
+  const dexDef = SERVICE_CATALOG['dex' as keyof typeof SERVICE_CATALOG];
+  if (!dexDef?.valuesFile) return;
+
+  try {
+    const data = await readValuesFile(dexDef.valuesFile);
+    const passwords = data.staticPasswords as Array<Record<string, string>> | undefined;
+    if (!Array.isArray(passwords) || passwords.length === 0) return;
+
+    let changed = false;
+    for (const entry of passwords) {
+      if (!entry.hash || entry.hash.includes('CHANGE_ME') || entry.hash.length < 50) {
+        entry.hash = bcrypt.hashSync('Test123!', 10);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      data.staticPasswords = passwords;
+      await writeValuesFile(dexDef.valuesFile, data);
+      logger.info('Auto-generated bcrypt hash for Dex static passwords (default password: Test123!)');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync Dex bcrypt hash');
+  }
+}
+
+/**
+ * Ensures Traefik (base chart) has cross-namespace discovery enabled.
+ * Without this, Traefik in the `default` namespace cannot discover
+ * IngressRoutes in `skaha-system`, and all services return 404.
+ */
+export async function syncBaseTraefikConfig(): Promise<void> {
+  const baseDef = SERVICE_CATALOG['base' as keyof typeof SERVICE_CATALOG];
+  if (!baseDef?.valuesFile) return;
+
+  try {
+    const data = await readValuesFile(baseDef.valuesFile);
+    let changed = false;
+
+    // Ensure traefik.providers.kubernetesCRD.allowCrossNamespace = true
+    const crdPath = 'traefik.providers.kubernetesCRD.allowCrossNamespace';
+    const crdKeys = crdPath.split('.');
+    const crdVal = crdKeys.reduce<unknown>((obj, k) => {
+      if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
+      return undefined;
+    }, data);
+
+    if (crdVal !== true) {
+      setNestedVal(data, crdPath, true);
+      changed = true;
+    }
+
+    // Ensure traefik.providers.kubernetesIngress.allowCrossNamespace = true
+    const ingressPath = 'traefik.providers.kubernetesIngress.allowCrossNamespace';
+    const ingressKeys = ingressPath.split('.');
+    const ingressVal = ingressKeys.reduce<unknown>((obj, k) => {
+      if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
+      return undefined;
+    }, data);
+
+    if (ingressVal !== true) {
+      setNestedVal(data, ingressPath, true);
+      changed = true;
+    }
+
+    if (changed) {
+      await writeValuesFile(baseDef.valuesFile, data);
+      logger.info('Ensured Traefik cross-namespace discovery is enabled in base values');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync base Traefik config');
   }
 }
 

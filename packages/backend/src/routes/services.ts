@@ -7,7 +7,7 @@ import { getServiceStatus, getAllStatuses } from '../services/status.service.js'
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
-import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb } from '../services/bootstrap.service.js';
+import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig } from '../services/bootstrap.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
 import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
@@ -738,11 +738,46 @@ export function findSemanticWarnings(serviceId: string, config: Record<string, u
     }
   }
 
-  // 8. Cavern identityManagerClass must be StandardIdentityManager
+  // 8. Dex: warn if any staticPasswords entry has an invalid bcrypt hash
+  if (serviceId === 'dex') {
+    const passwords = config.staticPasswords;
+    if (Array.isArray(passwords)) {
+      for (const entry of passwords as Array<Record<string, unknown>>) {
+        const hash = typeof entry.hash === 'string' ? entry.hash : '';
+        if (!hash || hash.includes('CHANGE_ME') || hash.length < 50) {
+          warnings.push('staticPasswords[].hash: invalid bcrypt hash — Dex will crash on startup');
+          break;
+        }
+      }
+    }
+  }
+
+  // 9. Cavern identityManagerClass must be StandardIdentityManager
   if (serviceId === 'cavern') {
     const cls = getNestedString(config, ['deployment', 'cavern', 'identityManagerClass']);
     if (cls && cls !== 'org.opencadc.auth.StandardIdentityManager') {
       warnings.push(`deployment.cavern.identityManagerClass: expected 'StandardIdentityManager', got '${cls}'`);
+    }
+  }
+
+  // 10. Science Portal: warn if skahaResourceID is missing (used for registry lookup)
+  if (serviceId === 'science-portal') {
+    const resId = getNestedString(config, ['deployment', 'sciencePortal', 'skahaResourceID']);
+    if (!resId) {
+      warnings.push('deployment.sciencePortal.skahaResourceID: empty — science-portal cannot find Skaha in the registry');
+    }
+  }
+
+  // 11. Registry: warn if core service entries are missing
+  if (serviceId === 'reg') {
+    const entries = getNestedValue(config, 'application.serviceEntries');
+    if (Array.isArray(entries)) {
+      const ids = (entries as Array<Record<string, string>>).map((e) => e.id);
+      for (const required of ['ivo://cadc.nrc.ca/skaha', 'ivo://cadc.nrc.ca/cavern', 'ivo://cadc.nrc.ca/posix-mapper']) {
+        if (!ids.includes(required)) {
+          warnings.push(`application.serviceEntries: missing ${required} — services using registry lookups will fail`);
+        }
+      }
     }
   }
 
@@ -939,6 +974,8 @@ router.post('/services/:id/deploy', async (req, res) => {
 
     // Ensure CA cert + volume mounts are in values before deploying
     try { await injectCaCertIntoValues(); } catch { /* CA may not exist yet */ }
+    try { await syncDexBcryptHash(); } catch { /* best-effort */ }
+    try { await syncBaseTraefikConfig(); } catch { /* best-effort */ }
     try { await syncPosixMapperDbConfig(); } catch { /* best-effort */ }
     try { await syncGmsId(); } catch { /* best-effort */ }
     try { await syncRegistryEntries(); } catch { /* best-effort */ }

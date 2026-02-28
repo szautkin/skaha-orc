@@ -1,8 +1,14 @@
 # Base (Traefik) — example values
 # Copy this directory to ./helm-values/ and customize
+# Bootstrap auto-syncs: cross-namespace discovery
 
 traefik:
   enabled: true
   websecure:
     tls:
       enabled: true
+  providers:
+    kubernetesCRD:
+      allowCrossNamespace: true
+    kubernetesIngress:
+      allowCrossNamespace: true

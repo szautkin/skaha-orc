@@ -3,7 +3,7 @@
 replicaCount: 1
 
 image:
-  repository: mock-ac
+  repository: ghcr.io/szautkin/skaha-orc/mock-ac
   tag: latest
   pullPolicy: IfNotPresent
 

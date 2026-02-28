@@ -1,6 +1,6 @@
 import type { ServiceId, DeployAllProgress } from '@skaha-orc/shared';
 import { getDeploymentOrder, SERVICE_CATALOG } from '@skaha-orc/shared';
-import { helmDeploy, helmUninstall } from './helm.service.js';
+import { helmDeploy, helmUninstall, cleanupStuckPVs } from './helm.service.js';
 import { scaleDeployment } from './kubectl.service.js';
 import { injectCaCertIntoValues } from './bootstrap.service.js';
 import { eventBus } from '../sse/event-bus.js';
@@ -127,6 +127,13 @@ export async function stopAll(
       });
       // Continue uninstalling others — upstream services don't block teardown
     }
+  }
+
+  // Post-uninstall: clean up any PVs stuck in Terminating state.
+  // After all services are torn down, PVC references are released,
+  // so we can safely remove finalizers on lingering PVs.
+  if (order.includes('volumes' as ServiceId)) {
+    try { await cleanupStuckPVs(); } catch { /* best-effort */ }
   }
 
   progress.currentService = null;

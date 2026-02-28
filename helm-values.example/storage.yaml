@@ -13,7 +13,7 @@ deployment:
       clientSecret: CHANGE_ME
       redirectURI: https://haproxy.cadc.dao.nrc.ca/storage
       callbackURI: https://haproxy.cadc.dao.nrc.ca/storage/oidc-callback
-      scope: openid profile
+      scope: openid profile offline_access
     backend:
       defaultService: cavern
       services:

@@ -14,7 +14,7 @@ deployment:
       clientSecret: CHANGE_ME
       redirectURI: https://haproxy.cadc.dao.nrc.ca/science-portal
       callbackURI: https://haproxy.cadc.dao.nrc.ca/science-portal/oidc-callback
-      scope: openid profile
+      scope: openid profile offline_access
     sessions:
       bannerText: ""
   extraHosts:

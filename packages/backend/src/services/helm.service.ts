@@ -115,7 +115,7 @@ async function ensureNamespaceHelmLabels(serviceId: ServiceId): Promise<void> {
     await execa(config.kubectlBinary, [
       ...kubeArgs(), 'annotate', 'namespace', ns,
       `meta.helm.sh/release-name=${releaseName}`,
-      `meta.helm.sh/release-namespace=default`,
+      `meta.helm.sh/release-namespace=${ns}`,
       '--overwrite',
     ], { env: { ...process.env, ...kubeEnv() } });
     logger.debug({ ns, releaseName }, 'Ensured namespace has Helm ownership labels');
@@ -701,6 +701,37 @@ async function kubectlDeleteVolumes(
   return { success: true, output };
 }
 
+/**
+ * Post-uninstall cleanup: patch any PVs stuck in Terminating state
+ * by removing their finalizers. Called by stop-all after the main
+ * uninstall loop to ensure PVs don't linger and block re-deploys.
+ */
+export async function cleanupStuckPVs(): Promise<void> {
+  try {
+    const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'get', 'pv',
+      '-o', 'jsonpath={range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{"\\n"}{end}',
+    ], { env: { ...process.env, ...kubeEnv() } });
+
+    const stuckPVs = stdout.trim().split('\n').filter(Boolean);
+    if (stuckPVs.length === 0) return;
+
+    for (const pvName of stuckPVs) {
+      try {
+        await execa(config.kubectlBinary, [
+          ...kubeArgs(), 'patch', 'pv', pvName,
+          '-p', '{"metadata":{"finalizers":null}}',
+        ], { env: { ...process.env, ...kubeEnv() } });
+        logger.info({ pvName }, 'Cleared finalizer on stuck PV');
+      } catch {
+        logger.debug({ pvName }, 'Could not clear finalizer on PV (may already be gone)');
+      }
+    }
+  } catch {
+    // No PVs or cluster not reachable — nothing to clean up
+  }
+}
+
 async function kubectlDeleteManifest(
   serviceId: ServiceId,
   manifest: string,
@@ -758,8 +789,15 @@ export async function helmUninstall(
     return { success: true, output: stdout + '\n' + stderr };
   } catch (err) {
     const detail = execaErrorDetail(err);
-    logger.error({ serviceId, ...detail }, 'Helm uninstall failed');
     const output = [detail.stderr, detail.stdout, detail.message].filter(Boolean).join('\n');
+
+    // "release not found" means it's already uninstalled — treat as success
+    if (output.includes('not found')) {
+      logger.info({ serviceId }, 'Helm release already uninstalled');
+      return { success: true, output: `${serviceId}: already uninstalled` };
+    }
+
+    logger.error({ serviceId, ...detail }, 'Helm uninstall failed');
     return { success: false, output };
   }
 }

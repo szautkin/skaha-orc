@@ -20,7 +20,7 @@ deployment:
       clientSecret: CHANGE_ME
       callbackURI: https://haproxy.cadc.dao.nrc.ca/skaha/oidc-callback
       redirectURI: https://haproxy.cadc.dao.nrc.ca/skaha
-      scope: openid profile
+      scope: openid profile offline_access
     sessions:
       maxCount: 5
       gpuEnabled: false
