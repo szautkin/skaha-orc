@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@hookform/resolvers": "^3.9.0",
+    "@hookform/resolvers": "^5.2.2",
     "@skaha-orc/shared": "*",
     "@tanstack/react-query": "^5.62.0",
     "@xyflow/react": "^12.4.0",
