@@ -1,33 +1,10 @@
 import { Router } from 'express';
 import type { ApiResponse, PlatformOidcSettings, OidcClientConfig } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, platformOidcSettingsSchema } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, platformOidcSettingsSchema, getNestedValue, setNestedValue } from '@skaha-orc/shared';
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { logger } from '../logger.js';
 
 const router = Router();
-
-export function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split('.');
-  let current: unknown = obj;
-  for (const key of keys) {
-    if (current == null || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-}
-
-export function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {
-  const keys = path.split('.');
-  let current: Record<string, unknown> = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i]!;
-    if (current[key] == null || typeof current[key] !== 'object') {
-      current[key] = {};
-    }
-    current = current[key] as Record<string, unknown>;
-  }
-  current[keys[keys.length - 1]!] = value;
-}
 
 // OIDC URI paths per service
 const OIDC_URI_PATHS: Record<string, string> = {

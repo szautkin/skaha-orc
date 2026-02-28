@@ -3,9 +3,9 @@ import { SERVICE_IDS } from '../types/services';
 import type { ServiceId } from '../types/services';
 
 describe('getDeploymentOrder', () => {
-  it('returns all 13 services when called with no args', () => {
+  it('returns all 14 services when called with no args', () => {
     const order = getDeploymentOrder();
-    expect(order).toHaveLength(13);
+    expect(order).toHaveLength(14);
     expect(new Set(order)).toEqual(new Set(SERVICE_IDS));
   });
 
@@ -68,7 +68,7 @@ describe('getServicesByTier', () => {
 
   it('assigns core tier correctly', () => {
     const tiers = getServicesByTier();
-    const expectedCore: ServiceId[] = ['base', 'reg', 'volumes', 'posix-mapper-db', 'posix-mapper', 'skaha'];
+    const expectedCore: ServiceId[] = ['base', 'reg', 'volumes', 'posix-mapper-db', 'posix-mapper', 'cavern', 'skaha'];
     for (const id of expectedCore) {
       expect(tiers.core).toContain(id);
     }
@@ -76,7 +76,7 @@ describe('getServicesByTier', () => {
 
   it('assigns recommended tier correctly', () => {
     const tiers = getServicesByTier();
-    const expectedRecommended: ServiceId[] = ['cavern', 'science-portal', 'storage-ui'];
+    const expectedRecommended: ServiceId[] = ['science-portal', 'storage-ui'];
     for (const id of expectedRecommended) {
       expect(tiers.recommended).toContain(id);
     }
@@ -84,7 +84,7 @@ describe('getServicesByTier', () => {
 
   it('assigns site tier correctly', () => {
     const tiers = getServicesByTier();
-    const expectedSite: ServiceId[] = ['haproxy', 'doi', 'dex', 'keycloak'];
+    const expectedSite: ServiceId[] = ['haproxy', 'mock-ac', 'doi', 'dex', 'keycloak'];
     for (const id of expectedSite) {
       expect(tiers.site).toContain(id);
     }

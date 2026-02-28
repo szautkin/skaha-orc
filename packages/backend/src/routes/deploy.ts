@@ -54,7 +54,7 @@ router.post('/deploy-all', async (req, res) => {
   }
 
   const { serviceIds, dryRun } = parsed.data;
-  const selectedSet = new Set(serviceIds as ServiceId[]);
+  const selectedSet = new Set(serviceIds);
 
   try {
     // Check for external unmet deps (not in selected set AND not already deployed)
@@ -103,7 +103,7 @@ router.post('/deploy-all', async (req, res) => {
       }
     }
 
-    const progress = await deployAll(serviceIds as ServiceId[], { dryRun });
+    const progress = await deployAll(serviceIds , { dryRun });
     res.json({ success: true, data: progress, runtimeWarnings });
   } catch (err) {
     logger.error({ err }, 'Deploy-all failed');
@@ -157,7 +157,7 @@ router.post('/stop-all', async (req, res) => {
   }
 
   try {
-    const progress = await stopAll(parsed.data.serviceIds as ServiceId[]);
+    const progress = await stopAll(parsed.data.serviceIds );
     res.json({ success: true, data: progress });
   } catch (err) {
     logger.error({ err }, 'Stop-all failed');
@@ -211,7 +211,7 @@ router.post('/pause-all', async (req, res) => {
   }
 
   try {
-    const progress = await pauseAll(parsed.data.serviceIds as ServiceId[]);
+    const progress = await pauseAll(parsed.data.serviceIds );
     res.json({ success: true, data: progress });
   } catch (err) {
     logger.error({ err }, 'Pause-all failed');
@@ -265,7 +265,7 @@ router.post('/resume-all', async (req, res) => {
   }
 
   try {
-    const progress = await resumeAll(parsed.data.serviceIds as ServiceId[]);
+    const progress = await resumeAll(parsed.data.serviceIds );
     res.json({ success: true, data: progress });
   } catch (err) {
     logger.error({ err }, 'Resume-all failed');

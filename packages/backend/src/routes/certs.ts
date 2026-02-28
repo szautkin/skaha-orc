@@ -11,6 +11,7 @@ import {
 } from '../services/cert.service.js';
 import { logger } from '../logger.js';
 
+// eslint-disable-next-line security/detect-unsafe-regex -- anchored DNS hostname pattern, no backtracking risk
 const DNS_RE = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 const ASCII_RE = /^[\x20-\x7E]+$/;
 

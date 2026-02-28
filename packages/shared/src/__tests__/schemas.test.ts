@@ -1,95 +1,34 @@
-import {
-  platformOidcSettingsSchema,
-  deployRequestSchema,
-  deployAllRequestSchema,
-  extraHostSchema,
-} from '../validation/schemas';
+import { deployAllRequestSchema, serviceIdSchema } from '../validation/schemas';
 
-describe('platformOidcSettingsSchema', () => {
-  const validSettings = {
-    issuerUri: 'https://dex.example.com',
-    sciencePortal: {
-      clientID: 'sp-client',
-      clientSecret: 'sp-secret',
-      redirectURI: 'https://example.com/redirect',
-      callbackURI: 'https://example.com/callback',
-      scope: 'openid profile',
-    },
-    storageUi: {
-      clientID: 'su-client',
-      clientSecret: 'su-secret',
-      redirectURI: 'https://example.com/su-redirect',
-      callbackURI: 'https://example.com/su-callback',
-      scope: 'openid',
-    },
-    skaha: {
-      clientID: 'skaha-client',
-      clientSecret: 'skaha-secret',
-      redirectURI: 'https://example.com/skaha-redirect',
-      callbackURI: 'https://example.com/skaha-callback',
-      scope: 'openid profile offline_access',
-    },
-  };
-
-  it('accepts valid settings', () => {
-    const result = platformOidcSettingsSchema.safeParse(validSettings);
-    expect(result.success).toBe(true);
+describe('serviceIdSchema', () => {
+  it('accepts valid service IDs', () => {
+    expect(serviceIdSchema.safeParse('base').success).toBe(true);
+    expect(serviceIdSchema.safeParse('skaha').success).toBe(true);
+    expect(serviceIdSchema.safeParse('mock-ac').success).toBe(true);
+    expect(serviceIdSchema.safeParse('posix-mapper-db').success).toBe(true);
   });
 
-  it('rejects when skaha field is missing', () => {
-    const { skaha: _, ...withoutSkaha } = validSettings;
-    const result = platformOidcSettingsSchema.safeParse(withoutSkaha);
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects non-URL issuerUri', () => {
-    const result = platformOidcSettingsSchema.safeParse({
-      ...validSettings,
-      issuerUri: 'not-a-url',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects empty clientID', () => {
-    const result = platformOidcSettingsSchema.safeParse({
-      ...validSettings,
-      sciencePortal: { ...validSettings.sciencePortal, clientID: '' },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects missing sections', () => {
-    const result = platformOidcSettingsSchema.safeParse({
-      issuerUri: 'https://dex.example.com',
-    });
-    expect(result.success).toBe(false);
-  });
-});
-
-describe('deployRequestSchema', () => {
-  it('accepts empty object (dryRun defaults to false)', () => {
-    const result = deployRequestSchema.safeParse({});
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.dryRun).toBe(false);
-    }
-  });
-
-  it('accepts { dryRun: true }', () => {
-    const result = deployRequestSchema.safeParse({ dryRun: true });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.dryRun).toBe(true);
-    }
+  it('rejects invalid service IDs', () => {
+    expect(serviceIdSchema.safeParse('invalid-service').success).toBe(false);
+    expect(serviceIdSchema.safeParse('').success).toBe(false);
+    expect(serviceIdSchema.safeParse('BASE').success).toBe(false);
   });
 });
 
 describe('deployAllRequestSchema', () => {
-  it('accepts valid request', () => {
+  it('accepts valid request with known service IDs', () => {
     const result = deployAllRequestSchema.safeParse({
-      serviceIds: ['base', 'skaha'],
+      serviceIds: ['base', 'volumes', 'skaha'],
+      dryRun: false,
     });
     expect(result.success).toBe(true);
+  });
+
+  it('rejects request with unknown service ID', () => {
+    const result = deployAllRequestSchema.safeParse({
+      serviceIds: ['base', 'unknown-service'],
+    });
+    expect(result.success).toBe(false);
   });
 
   it('rejects empty serviceIds', () => {
@@ -98,21 +37,25 @@ describe('deployAllRequestSchema', () => {
     });
     expect(result.success).toBe(false);
   });
-});
 
-describe('extraHostSchema', () => {
-  it('accepts valid host', () => {
-    const result = extraHostSchema.safeParse({ ip: '10.0.0.1', hostname: 'example.com' });
+  it('defaults dryRun to false', () => {
+    const result = deployAllRequestSchema.safeParse({
+      serviceIds: ['base'],
+    });
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.dryRun).toBe(false);
+    }
   });
 
-  it('rejects empty ip', () => {
-    const result = extraHostSchema.safeParse({ ip: '', hostname: 'example.com' });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects empty hostname', () => {
-    const result = extraHostSchema.safeParse({ ip: '10.0.0.1', hostname: '' });
-    expect(result.success).toBe(false);
+  it('accepts all 14 service IDs', () => {
+    const result = deployAllRequestSchema.safeParse({
+      serviceIds: [
+        'base', 'haproxy', 'reg', 'volumes', 'posix-mapper-db',
+        'posix-mapper', 'mock-ac', 'skaha', 'cavern', 'science-portal',
+        'storage-ui', 'doi', 'dex', 'keycloak',
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 });

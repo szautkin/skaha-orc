@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SERVICE_IDS } from '../types/services.js';
 
 export const resourceSpecSchema = z.object({
   requests: z.object({ memory: z.string(), cpu: z.string() }),
@@ -60,8 +61,10 @@ export const deployRequestSchema = z.object({
   dryRun: z.boolean().optional().default(false),
 });
 
+export const serviceIdSchema = z.enum(SERVICE_IDS);
+
 export const deployAllRequestSchema = z.object({
-  serviceIds: z.array(z.string()).min(1),
+  serviceIds: z.array(serviceIdSchema).min(1),
   dryRun: z.boolean().optional().default(false),
 });
 

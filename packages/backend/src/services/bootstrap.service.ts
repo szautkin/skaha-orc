@@ -3,8 +3,8 @@ import { resolve, dirname } from 'path';
 import { randomBytes } from 'crypto';
 import { execa } from 'execa';
 import bcrypt from 'bcryptjs';
-import type { PreflightCheck, PreflightResult } from '@skaha-orc/shared';
-import { PLATFORM_HOSTNAME, SERVICE_CATALOG } from '@skaha-orc/shared';
+import type { PreflightCheck, PreflightResult, SyncResult } from '@skaha-orc/shared';
+import { PLATFORM_HOSTNAME, SERVICE_CATALOG, getNestedValue, setNestedValue, getNestedArray } from '@skaha-orc/shared';
 import { config } from '../config.js';
 import { kubeArgs, kubeEnv } from './kube-args.js';
 import { logger } from '../logger.js';
@@ -193,28 +193,6 @@ const VOLUME_MOUNT_PREFIXES: Record<string, string> = {
   doi: 'deployment.doi',
 };
 
-function getNestedArray(obj: Record<string, unknown>, path: string): unknown[] | undefined {
-  const keys = path.split('.');
-  let current: unknown = obj;
-  for (const key of keys) {
-    if (current == null || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return Array.isArray(current) ? current : undefined;
-}
-
-function setNestedVal(obj: Record<string, unknown>, path: string, value: unknown): void {
-  const keys = path.split('.');
-  let current: Record<string, unknown> = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i]!;
-    if (current[key] == null || typeof current[key] !== 'object') {
-      current[key] = {};
-    }
-    current = current[key] as Record<string, unknown>;
-  }
-  current[keys[keys.length - 1]!] = value;
-}
 
 export async function injectCaCertIntoValues(): Promise<void> {
   const caPem = await readFile(CA_CERT_PATH, 'utf-8');
@@ -253,7 +231,7 @@ export async function injectCaCertIntoValues(): Promise<void> {
         const mounts = (getNestedArray(data, mountsKey) ?? []) as Record<string, unknown>[];
         if (!mounts.some((m) => m.mountPath === '/config/cacerts')) {
           mounts.push({ mountPath: '/config/cacerts', name: 'cacert-volume' });
-          setNestedVal(data, mountsKey, mounts);
+          setNestedValue(data, mountsKey, mounts);
           changed = true;
         }
 
@@ -264,7 +242,7 @@ export async function injectCaCertIntoValues(): Promise<void> {
             name: 'cacert-volume',
             secret: { defaultMode: 420, secretName },
           });
-          setNestedVal(data, volsKey, vols);
+          setNestedValue(data, volsKey, vols);
           changed = true;
         }
 
@@ -282,12 +260,12 @@ export async function injectCaCertIntoValues(): Promise<void> {
         if (jtoIdx >= 0) {
           if (envArr[jtoIdx]!.value !== JTO_VALUE) {
             envArr[jtoIdx] = { name: 'JAVA_TOOL_OPTIONS', value: JTO_VALUE };
-            setNestedVal(data, envKey, envArr);
+            setNestedValue(data, envKey, envArr);
             changed = true;
           }
         } else {
           envArr.push({ name: 'JAVA_TOOL_OPTIONS', value: JTO_VALUE });
-          setNestedVal(data, envKey, envArr);
+          setNestedValue(data, envKey, envArr);
           changed = true;
         }
       }
@@ -312,42 +290,53 @@ export async function injectCaCertIntoValues(): Promise<void> {
  * Without this, posix-mapper's catalina.properties has no DB pool vars and
  * throws NumberFormatException on startup.
  */
-export async function syncPosixMapperDbConfig(): Promise<void> {
+export async function syncPosixMapperDbConfig(): Promise<SyncResult> {
+  const name = 'syncPosixMapperDbConfig';
   const pmDbDef = SERVICE_CATALOG['posix-mapper-db'];
   const pmDef = SERVICE_CATALOG['posix-mapper'];
-  if (!pmDbDef?.valuesFile || !pmDef?.valuesFile) return;
+  if (!pmDbDef?.valuesFile || !pmDef?.valuesFile) {
+    return { name, status: 'skipped', message: 'No values files' };
+  }
 
   try {
     const dbData = await readValuesFile(pmDbDef.valuesFile);
     const pmData = await readValuesFile(pmDef.valuesFile);
 
     const pgAuth = (dbData as Record<string, unknown>).postgres as Record<string, unknown> | undefined;
-    if (!pgAuth?.auth) return;
+    if (!pgAuth?.auth) {
+      return { name, status: 'skipped', message: 'No postgres.auth in DB values' };
+    }
 
     const auth = pgAuth.auth as Record<string, string>;
     const database = auth.database || 'posixmapper';
     const schema = auth.schema || 'mapping';
     const username = auth.username || 'posixmapper';
     const password = auth.password || 'posixmapper';
+    const url = `jdbc:postgresql://posix-mapper-postgres.skaha-system:5432/${database}`;
 
-    const pgBlock = {
-      maxActive: 8,
-      url: `jdbc:postgresql://posix-mapper-postgres.skaha-system:5432/${database}`,
-      schema,
-      auth: { username, password },
-    };
+    const existing = (pmData.postgresql ?? {}) as Record<string, unknown>;
 
-    const existing = pmData.postgresql as Record<string, unknown> | undefined;
     // Skip if already populated with a real URL
-    if (existing?.url && typeof existing.url === 'string' && existing.url.includes('postgresql://')) {
-      return;
+    if (existing.url && typeof existing.url === 'string' && existing.url.includes('postgresql://')) {
+      return { name, status: 'skipped', message: 'Already has valid postgresql URL' };
     }
 
-    pmData.postgresql = pgBlock;
+    // Merge individual keys — preserve user-added keys like maxActive
+    if (!existing.url) existing.url = url;
+    if (!existing.schema) existing.schema = schema;
+    if (!existing.maxActive) existing.maxActive = 8;
+    const existingAuth = (existing.auth ?? {}) as Record<string, string>;
+    if (!existingAuth.username) existingAuth.username = username;
+    if (!existingAuth.password) existingAuth.password = password;
+    existing.auth = existingAuth;
+    pmData.postgresql = existing;
+
     await writeValuesFile(pmDef.valuesFile, pmData);
     logger.info('Synced posix-mapper DB config from posix-mapper-postgres values');
+    return { name, status: 'applied', message: 'Merged DB config into posix-mapper values' };
   } catch (err) {
     logger.warn({ err }, 'Failed to sync posix-mapper DB config');
+    return { name, status: 'failed', message: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -363,16 +352,22 @@ const GMS_ID_PATHS: Record<string, string> = {
   doi: 'deployment.doi.gmsID',
 };
 
-export async function syncGmsId(): Promise<void> {
+export async function syncGmsId(): Promise<SyncResult> {
+  const name = 'syncGmsId';
   const pmDef = SERVICE_CATALOG['posix-mapper'];
-  if (!pmDef?.valuesFile) return;
+  if (!pmDef?.valuesFile) {
+    return { name, status: 'skipped', message: 'No posix-mapper values file' };
+  }
 
   try {
     const pmData = await readValuesFile(pmDef.valuesFile);
     const deployment = pmData.deployment as Record<string, unknown> | undefined;
     const posixMapper = deployment?.posixMapper as Record<string, unknown> | undefined;
     const gmsID = posixMapper?.gmsID;
-    if (!gmsID || typeof gmsID !== 'string') return;
+    if (!gmsID || typeof gmsID !== 'string') {
+      logger.warn('posix-mapper gmsID is empty — group lookups will fail at runtime');
+      return { name, status: 'skipped', message: 'gmsID is empty in posix-mapper values' };
+    }
 
     let updated = 0;
     for (const [svcId, path] of Object.entries(GMS_ID_PATHS)) {
@@ -380,15 +375,11 @@ export async function syncGmsId(): Promise<void> {
       if (!def?.valuesFile) continue;
       try {
         const data = await readValuesFile(def.valuesFile);
-        const keys = path.split('.');
-        const currentVal = keys.reduce<unknown>((obj, k) => {
-          if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
-          return undefined;
-        }, data);
+        const currentVal = getNestedValue(data, path);
 
         if (currentVal === gmsID) continue;
 
-        setNestedVal(data, path, gmsID);
+        setNestedValue(data, path, gmsID);
         await writeValuesFile(def.valuesFile, data);
         updated++;
       } catch {
@@ -398,9 +389,12 @@ export async function syncGmsId(): Promise<void> {
 
     if (updated > 0) {
       logger.info({ gmsID, updated }, 'Synced gmsID to service values files');
+      return { name, status: 'applied', message: `Synced gmsID to ${updated} services` };
     }
+    return { name, status: 'skipped', message: 'All services already have correct gmsID' };
   } catch (err) {
     logger.warn({ err }, 'Failed to sync gmsID');
+    return { name, status: 'failed', message: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -525,9 +519,12 @@ export async function syncPosixMapperAuthorizedClients(): Promise<void> {
  * The chart template iterates over backend.services and renders:
  *   org.opencadc.vosui.<name>.service.features.batchDownload = {{ $nameConfig.features.batchDownload }}
  */
-export async function syncStorageUiFeatureFlags(): Promise<void> {
+export async function syncStorageUiFeatureFlags(): Promise<SyncResult> {
+  const name = 'syncStorageUiFeatureFlags';
   const def = SERVICE_CATALOG['storage-ui'];
-  if (!def?.valuesFile) return;
+  if (!def?.valuesFile) {
+    return { name, status: 'skipped', message: 'No storage-ui values file' };
+  }
 
   const FLAGS: Record<string, boolean> = {
     batchDownload: true,
@@ -572,9 +569,12 @@ export async function syncStorageUiFeatureFlags(): Promise<void> {
       data.deployment = deployment;
       await writeValuesFile(def.valuesFile, data);
       logger.info('Auto-set storage-ui feature flags in backend.services.*.features');
+      return { name, status: 'applied', message: 'Set feature flags' };
     }
+    return { name, status: 'skipped', message: 'Feature flags already set' };
   } catch (err) {
     logger.debug({ err }, 'Could not sync storage-ui feature flags (values file may not exist yet)');
+    return { name, status: 'failed', message: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -820,14 +820,10 @@ export async function syncBaseTraefikConfig(): Promise<void> {
     // Without this, Traefik ignores all IngressRoutes and every service returns 404.
     // Note: only kubernetesCRD has allowCrossNamespace — kubernetesIngress does not.
     const crdPath = 'traefik.providers.kubernetesCRD.allowCrossNamespace';
-    const crdKeys = crdPath.split('.');
-    const crdVal = crdKeys.reduce<unknown>((obj, k) => {
-      if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
-      return undefined;
-    }, data);
+    const crdVal = getNestedValue(data, crdPath);
 
     if (crdVal !== true) {
-      setNestedVal(data, crdPath, true);
+      setNestedValue(data, crdPath, true);
       changed = true;
     }
 
@@ -881,14 +877,10 @@ export async function syncTraefikTlsCert(): Promise<void> {
 
     // Point Traefik's default TLS store at our secret
     const storePath = 'traefik.tlsStore.default.defaultCertificate.secretName';
-    const storeKeys = storePath.split('.');
-    const storeVal = storeKeys.reduce<unknown>((obj, k) => {
-      if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
-      return undefined;
-    }, data);
+    const storeVal = getNestedValue(data, storePath);
 
     if (storeVal !== 'default-certificate') {
-      setNestedVal(data, storePath, 'default-certificate');
+      setNestedValue(data, storePath, 'default-certificate');
       changed = true;
     }
 
@@ -1006,16 +998,12 @@ export async function syncUrlProtocol(): Promise<void> {
       let changed = false;
 
       for (const path of paths) {
-        const keys = path.split('.');
-        const val = keys.reduce<unknown>((obj, k) => {
-          if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
-          return undefined;
-        }, data);
+        const val = getNestedValue(data, path);
 
         if (typeof val === 'string' && val.length > 0 &&
             !val.startsWith('https://') && !val.startsWith('http://')) {
           // Looks like a hostname without protocol — prepend https://
-          setNestedVal(data, path, `https://${val}`);
+          setNestedValue(data, path, `https://${val}`);
           changed = true;
           totalFixed++;
         }
@@ -1186,14 +1174,19 @@ const OIDC_CLIENT_MAP: Array<{
  * Generates a random 32-byte hex secret and syncs it to both the Dex
  * staticClients entry and all services that share that clientID.
  */
-export async function syncOidcClientSecrets(): Promise<void> {
+export async function syncOidcClientSecrets(): Promise<SyncResult> {
+  const name = 'syncOidcClientSecrets';
   const dexDef = SERVICE_CATALOG['dex' as keyof typeof SERVICE_CATALOG];
-  if (!dexDef?.valuesFile) return;
+  if (!dexDef?.valuesFile) {
+    return { name, status: 'skipped', message: 'No dex values file' };
+  }
 
   try {
     const dexData = await readValuesFile(dexDef.valuesFile);
     const clients = dexData.staticClients as Array<Record<string, unknown>> | undefined;
-    if (!Array.isArray(clients)) return;
+    if (!Array.isArray(clients)) {
+      return { name, status: 'skipped', message: 'No staticClients in dex values' };
+    }
 
     let dexChanged = false;
 
@@ -1219,14 +1212,10 @@ export async function syncOidcClientSecrets(): Promise<void> {
         if (!def?.valuesFile) continue;
         try {
           const data = await readValuesFile(def.valuesFile);
-          const keys = path.split('.');
-          const current = keys.reduce<unknown>((obj, k) => {
-            if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
-            return undefined;
-          }, data);
+          const current = getNestedValue(data, path);
 
           if (current !== secret) {
-            setNestedVal(data, path, secret);
+            setNestedValue(data, path, secret);
             await writeValuesFile(def.valuesFile, data);
           }
         } catch { continue; }
@@ -1236,9 +1225,12 @@ export async function syncOidcClientSecrets(): Promise<void> {
     if (dexChanged) {
       await writeValuesFile(dexDef.valuesFile, dexData);
       logger.info('Auto-generated OIDC client secrets and synced to services');
+      return { name, status: 'applied', message: 'Generated and synced OIDC client secrets' };
     }
+    return { name, status: 'skipped', message: 'OIDC client secrets already valid' };
   } catch (err) {
     logger.warn({ err }, 'Failed to sync OIDC client secrets');
+    return { name, status: 'failed', message: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -1284,14 +1276,19 @@ const DEX_REDIRECT_MAP: Array<{
  * ensures Dex's staticClients[].redirectURIs includes both.
  * Without this, Dex rejects the redirect_uri with "unregistered url".
  */
-export async function syncDexRedirectUris(): Promise<void> {
+export async function syncDexRedirectUris(): Promise<SyncResult> {
+  const name = 'syncDexRedirectUris';
   const dexDef = SERVICE_CATALOG['dex' as keyof typeof SERVICE_CATALOG];
-  if (!dexDef?.valuesFile) return;
+  if (!dexDef?.valuesFile) {
+    return { name, status: 'skipped', message: 'No dex values file' };
+  }
 
   try {
     const dexData = await readValuesFile(dexDef.valuesFile);
     const clients = dexData.staticClients as Array<Record<string, unknown>> | undefined;
-    if (!Array.isArray(clients)) return;
+    if (!Array.isArray(clients)) {
+      return { name, status: 'skipped', message: 'No staticClients in dex values' };
+    }
 
     let changed = false;
 
@@ -1308,11 +1305,7 @@ export async function syncDexRedirectUris(): Promise<void> {
 
           // Collect both callbackURI and redirectURI
           for (const path of [callbackPath, redirectPath]) {
-            const keys = path.split('.');
-            const val = keys.reduce<unknown>((obj, k) => {
-              if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
-              return undefined;
-            }, data);
+            const val = getNestedValue(data, path);
             if (typeof val === 'string' && val.length > 0 && !redirectURIs.includes(val)) {
               redirectURIs.push(val);
             }
@@ -1335,9 +1328,12 @@ export async function syncDexRedirectUris(): Promise<void> {
     if (changed) {
       await writeValuesFile(dexDef.valuesFile, dexData);
       logger.info('Synced Dex staticClients redirectURIs from service callbackURI values');
+      return { name, status: 'applied', message: 'Synced redirect URIs to Dex' };
     }
+    return { name, status: 'skipped', message: 'Redirect URIs already up to date' };
   } catch (err) {
     logger.warn({ err }, 'Failed to sync Dex redirect URIs');
+    return { name, status: 'failed', message: err instanceof Error ? err.message : String(err) };
   }
 }
 

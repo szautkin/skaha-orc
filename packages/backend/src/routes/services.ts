@@ -1,18 +1,20 @@
 import { Router } from 'express';
 import { randomBytes } from 'crypto';
 import { networkInterfaces } from 'os';
-import type { ServiceId, ApiResponse, ServiceWithStatus, ExtraHost, DeploymentPhase } from '@skaha-orc/shared';
-import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME, configUpdateSchema, getUnmetDependencies } from '@skaha-orc/shared';
+import type { ServiceId, ApiResponse, ServiceWithStatus, ExtraHost, DeploymentPhase, SyncResult } from '@skaha-orc/shared';
+import { SERVICE_CATALOG, SERVICE_IDS, PLATFORM_HOSTNAME, configUpdateSchema, getUnmetDependencies, getNestedValue, setNestedValue, getNestedString } from '@skaha-orc/shared';
 import { getServiceStatus, getAllStatuses } from '../services/status.service.js';
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
-import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages, syncOidcClientSecrets, syncDexRedirectUris, syncDbPasswords } from '../services/bootstrap.service.js';
+import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages, syncOidcClientSecrets, syncDexRedirectUris, syncDbPasswords, syncStorageUiFeatureFlags } from '../services/bootstrap.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
 import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
 
+// eslint-disable-next-line security/detect-unsafe-regex -- anchored IPv4 octet pattern, no backtracking risk
 const IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
+// eslint-disable-next-line security/detect-unsafe-regex -- anchored IPv6 pattern, no backtracking risk
 const IPV6_RE = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^([0-9a-fA-F]{1,4}:)*:([0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$/;
 
 function isValidIp(ip: string): boolean {
@@ -153,26 +155,6 @@ export async function initializeApiKeys(): Promise<void> {
   logger.info('Auto-generated skaha↔cavern API key and wrote to values files');
 }
 
-function getNestedString(obj: Record<string, unknown>, keys: string[]): string {
-  let current: unknown = obj;
-  for (const key of keys) {
-    if (current === null || typeof current !== 'object') return '';
-    current = (current as Record<string, unknown>)[key];
-  }
-  return typeof current === 'string' ? current : '';
-}
-
-function setNestedValue(obj: Record<string, unknown>, keys: string[], value: unknown): void {
-  let current: Record<string, unknown> = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i]!;
-    if (typeof current[key] !== 'object' || current[key] === null) {
-      current[key] = {};
-    }
-    current = current[key] as Record<string, unknown>;
-  }
-  current[keys[keys.length - 1]!] = value;
-}
 
 const router = Router();
 
@@ -797,15 +779,6 @@ export function findSemanticWarnings(serviceId: string, config: Record<string, u
   return warnings;
 }
 
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split('.');
-  let current: unknown = obj;
-  for (const key of keys) {
-    if (current == null || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-}
 
 router.post('/services/:id/auto-fix', async (req, res) => {
   const serviceId = req.params.id as ServiceId;
@@ -988,27 +961,31 @@ router.post('/services/:id/deploy', async (req, res) => {
     // Ensure CA cert + volume mounts are in values before deploying
     try { await injectCaCertIntoValues(); } catch { /* CA may not exist yet */ }
     try { await syncDexBcryptHash(); } catch { /* best-effort */ }
-    try { await syncOidcClientSecrets(); } catch { /* best-effort */ }
-    try { await syncDexRedirectUris(); } catch { /* best-effort */ }
     try { await syncBaseTraefikConfig(); } catch { /* best-effort */ }
     try { await syncTraefikTlsCert(); } catch { /* best-effort */ }
     try { await syncUrlProtocol(); } catch { /* best-effort */ }
     try { await syncDbPasswords(); } catch { /* best-effort */ }
     try { await syncTraefikClusterIp(); } catch { /* best-effort */ }
     try { await loadKindImages(); } catch { /* best-effort */ }
-    try { await syncPosixMapperDbConfig(); } catch { /* best-effort */ }
-    try { await syncGmsId(); } catch { /* best-effort */ }
     try { await syncRegistryEntries(); } catch { /* best-effort */ }
     try { await syncDexPreferredUsername(); } catch { /* best-effort */ }
     try { await syncPosixMapperAuthorizedClients(); } catch { /* best-effort */ }
     try { await syncCavernRootOwner(); } catch { /* best-effort */ }
     try { await seedPosixMapperDb(); } catch { /* best-effort */ }
 
+    // Tracked syncs — collect results for response
+    const syncResults: SyncResult[] = [];
+    syncResults.push(await syncGmsId());
+    syncResults.push(await syncPosixMapperDbConfig());
+    syncResults.push(await syncOidcClientSecrets());
+    syncResults.push(await syncDexRedirectUris());
+    syncResults.push(await syncStorageUiFeatureFlags());
+
     const result = await helmDeploy(serviceId, { dryRun });
     if (!result.success) {
       logger.error({ serviceId, output: result.output }, 'Deploy returned failure');
     }
-    res.json({ success: result.success, data: { output: result.output } });
+    res.json({ success: result.success, data: { output: result.output, syncResults } });
   } catch (err) {
     logger.error({ err, serviceId }, 'Deploy threw unexpectedly');
     res.status(500).json({ success: false, error: `Deploy failed: ${err instanceof Error ? err.message : String(err)}` });

@@ -80,6 +80,7 @@ export type {
   ConfigUpdateRequest,
   PreflightCheck,
   PreflightResult,
+  SyncResult,
 } from './types/api.js';
 
 // Constants
@@ -101,6 +102,9 @@ export type { DeploymentProfileId, DeploymentProfile } from './constants/catalog
 
 export { UVIC_COLORS, PHASE_COLORS, PHASE_LABELS, TIER_COLORS, DEPLOY_PHASE_COLORS, DEPLOY_PHASE_BG } from './constants/colors.js';
 
+// Utils
+export { getNestedValue, setNestedValue, getNestedString, getNestedArray } from './utils/nested-value.js';
+
 // Validation
 export {
   resourceSpecSchema,
@@ -112,6 +116,7 @@ export {
   postgresConfigSchema,
   deployRequestSchema,
   deployAllRequestSchema,
+  serviceIdSchema,
   configUpdateSchema,
   platformOidcSettingsSchema,
 } from './validation/schemas.js';

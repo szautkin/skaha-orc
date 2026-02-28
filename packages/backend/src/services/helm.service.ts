@@ -242,6 +242,7 @@ export async function helmDeploy(
 
 /** Validate a Kubernetes quantity string (e.g. "10Gi", "500Mi", "1Ti"). */
 function validateQuantity(value: string, field: string): string {
+  // eslint-disable-next-line security/detect-unsafe-regex -- anchored, no backtracking risk on short quantity strings
   const valid = /^\d+(\.\d+)?(Ki|Mi|Gi|Ti|Pi|Ei|m|k|M|G|T|P|E)?$/;
   if (!valid.test(value)) {
     throw new Error(`Invalid quantity "${value}" for ${field}. Expected format: <number><suffix> (e.g. 10Gi, 500Mi, 1Ti)`);
@@ -558,7 +559,7 @@ async function kubectlApply(
             { env: { ...process.env, ...kubeEnv() } },
           );
           outputs.push(stdout, stderr);
-        } catch (createErr) {
+        } catch {
           // Propagate the original apply error for clarity
           throw applyErr;
         }

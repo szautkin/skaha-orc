@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, Square, RotateCcw, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
-import { SERVICE_CATALOG, DEPLOY_PHASE_ORDER, DEPLOY_PHASE_LABELS, DEPLOY_PHASE_COLORS, getServicesByPhase } from '@skaha-orc/shared';
+import { DEPLOY_PHASE_ORDER, DEPLOY_PHASE_LABELS, DEPLOY_PHASE_COLORS, getServicesByPhase } from '@skaha-orc/shared';
 import type { DeployPhaseNumber, DeploymentPhase } from '@skaha-orc/shared';
 import { useStopAll, usePauseAll, useResumeAll } from '@/hooks/use-services';
 import { useServicesLive } from '@/hooks/use-services-live';

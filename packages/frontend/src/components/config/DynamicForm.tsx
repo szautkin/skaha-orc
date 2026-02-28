@@ -1,6 +1,7 @@
 import { useForm, FormProvider } from 'react-hook-form';
 import { Save, Loader2 } from 'lucide-react';
 import yaml from 'js-yaml';
+import { getNestedValue, setNestedValue } from '@skaha-orc/shared';
 import { FieldRenderer, type FieldDef } from './FieldRenderer';
 
 export interface FieldSection {
@@ -13,30 +14,6 @@ interface DynamicFormProps {
   values: Record<string, unknown>;
   onSave: (data: Record<string, unknown>) => void;
   isSaving: boolean;
-}
-
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split('.');
-  let current: unknown = obj;
-  for (const key of keys) {
-    if (current == null || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-}
-
-function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {
-  const keys = path.split('.');
-  let current = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i]!;
-    if (!(key in current) || typeof current[key] !== 'object' || current[key] == null) {
-      current[key] = {};
-    }
-    current = current[key] as Record<string, unknown>;
-  }
-  const lastKey = keys[keys.length - 1]!;
-  current[lastKey] = value;
 }
 
 function flattenToFormValues(

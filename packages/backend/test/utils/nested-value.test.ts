@@ -1,4 +1,4 @@
-import { getNestedValue, setNestedValue } from '../../src/routes/oidc';
+import { getNestedValue, setNestedValue } from '@skaha-orc/shared';
 
 describe('getNestedValue', () => {
   it('gets a top-level key', () => {

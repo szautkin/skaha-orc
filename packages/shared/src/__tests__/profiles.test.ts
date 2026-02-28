@@ -45,13 +45,13 @@ describe('DEPLOYMENT_PROFILES', () => {
 
   it('minimal includes only core tier services', () => {
     const minimal = DEPLOYMENT_PROFILES.find((p) => p.id === 'minimal')!;
-    const coreTier: ServiceId[] = ['base', 'reg', 'volumes', 'posix-mapper-db', 'posix-mapper', 'skaha'];
+    const coreTier: ServiceId[] = ['base', 'reg', 'volumes', 'posix-mapper-db', 'posix-mapper', 'cavern', 'skaha'];
     expect(new Set(minimal.serviceIds)).toEqual(new Set(coreTier));
   });
 
-  it('full includes all 13 services', () => {
+  it('full includes all 14 services', () => {
     const full = DEPLOYMENT_PROFILES.find((p) => p.id === 'full')!;
-    expect(full.serviceIds).toHaveLength(13);
+    expect(full.serviceIds).toHaveLength(14);
     expect(new Set(full.serviceIds)).toEqual(new Set(SERVICE_IDS));
   });
 });

@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { kubeArgs, kubeEnv } from '../services/kube-args.js';
 import { logger } from '../logger.js';
 
+// eslint-disable-next-line security/detect-unsafe-regex -- anchored DNS-1123 pattern, no backtracking risk
 const DNS_1123_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
 
 // Mutable runtime context — can be changed via PUT /kubernetes/context

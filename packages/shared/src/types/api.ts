@@ -50,3 +50,9 @@ export interface PreflightResult {
   ready: boolean;
   checks: PreflightCheck[];
 }
+
+export interface SyncResult {
+  name: string;
+  status: 'applied' | 'skipped' | 'failed';
+  message?: string;
+}
