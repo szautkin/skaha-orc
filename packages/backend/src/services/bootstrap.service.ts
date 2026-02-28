@@ -53,16 +53,6 @@ export async function ensureDirectories(): Promise<void> {
 export async function copyExampleValues(): Promise<void> {
   const helmDir = resolve(config.helmConfigDir);
 
-  let helmEmpty = true;
-  try {
-    const entries = await readdir(helmDir);
-    helmEmpty = entries.filter((f) => f.endsWith('.yaml')).length === 0;
-  } catch {
-    helmEmpty = true;
-  }
-
-  if (!helmEmpty) return;
-
   // Search for helm-values.example/ walking up from the CWD.
   // In a monorepo the dev CWD is packages/backend/ so the example dir
   // at the repo root is two levels up.
@@ -72,11 +62,28 @@ export async function copyExampleValues(): Promise<void> {
     return;
   }
 
-  const files = (await readdir(exampleDir)).filter((f) => f.endsWith('.yaml'));
-  for (const file of files) {
-    await copyFile(resolve(exampleDir, file), resolve(helmDir, file));
+  // Get existing files in helm-values/
+  let existing: Set<string>;
+  try {
+    const entries = await readdir(helmDir);
+    existing = new Set(entries.filter((f) => f.endsWith('.yaml')));
+  } catch {
+    existing = new Set();
   }
-  logger.info({ count: files.length }, 'Copied example values files to helm-values/');
+
+  // Copy all example files, filling in any that are missing
+  const exampleFiles = (await readdir(exampleDir)).filter((f) => f.endsWith('.yaml'));
+  let copied = 0;
+  for (const file of exampleFiles) {
+    if (!existing.has(file)) {
+      await copyFile(resolve(exampleDir, file), resolve(helmDir, file));
+      copied++;
+    }
+  }
+
+  if (copied > 0) {
+    logger.info({ copied }, 'Copied missing example values files to helm-values/');
+  }
 }
 
 /**

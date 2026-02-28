@@ -89,24 +89,29 @@ async function stepExampleValues() {
   const helmDir = join(ROOT, 'helm-values');
   const exampleDir = join(ROOT, 'helm-values.example');
 
-  const entries = await readdir(helmDir).catch(() => []);
-  const yamlFiles = entries.filter((f) => f.endsWith('.yaml'));
-
-  if (yamlFiles.length > 0) {
-    ok(`${yamlFiles.length} values file(s) already present`);
-    return;
-  }
-
   if (!(await exists(exampleDir))) {
     warn('No helm-values.example/ directory found — add your own values files');
     return;
   }
 
+  const existingFiles = new Set((await readdir(helmDir).catch(() => [])).filter((f) => f.endsWith('.yaml')));
   const examples = (await readdir(exampleDir)).filter((f) => f.endsWith('.yaml'));
+
+  let copied = 0;
   for (const file of examples) {
-    await copyFile(join(exampleDir, file), join(helmDir, file));
+    if (!existingFiles.has(file)) {
+      await copyFile(join(exampleDir, file), join(helmDir, file));
+      copied++;
+    }
   }
-  ok(`Copied ${examples.length} example values file(s)`);
+
+  if (copied > 0 && existingFiles.size > 0) {
+    ok(`${copied} missing values file(s) added, ${existingFiles.size} already present`);
+  } else if (copied > 0) {
+    ok(`Copied ${copied} example values file(s)`);
+  } else {
+    ok(`All ${existingFiles.size} values file(s) already present`);
+  }
 }
 
 async function stepHelmCheck() {
