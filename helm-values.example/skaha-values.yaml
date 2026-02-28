@@ -18,8 +18,8 @@ deployment:
       uri: https://haproxy.cadc.dao.nrc.ca/dex
       clientID: science-portal
       clientSecret: CHANGE_ME
-      callbackURI: https://haproxy.cadc.dao.nrc.ca/skaha/oidc-callback
-      redirectURI: https://haproxy.cadc.dao.nrc.ca/skaha
+      callbackURI: https://haproxy.cadc.dao.nrc.ca/skaha
+      redirectURI: https://haproxy.cadc.dao.nrc.ca/skaha/oidc-callback
       scope: openid profile offline_access
     sessions:
       maxCount: 5

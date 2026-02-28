@@ -1,5 +1,6 @@
 import { mkdir, readdir, copyFile, stat, readFile } from 'fs/promises';
 import { resolve, dirname } from 'path';
+import { randomBytes } from 'crypto';
 import { execa } from 'execa';
 import bcrypt from 'bcryptjs';
 import type { PreflightCheck, PreflightResult } from '@skaha-orc/shared';
@@ -908,6 +909,189 @@ export async function loadKindImages(): Promise<void> {
     }
   } catch {
     // Not a Kind cluster or kind CLI not available
+  }
+}
+
+/**
+ * OIDC client definitions — maps Dex clientID to the services that share
+ * that client and the values paths where the clientSecret lives.
+ */
+const OIDC_CLIENT_MAP: Array<{
+  clientId: string;
+  serviceSecretPaths: Array<{ serviceId: string; path: string }>;
+}> = [
+  {
+    clientId: 'science-portal',
+    serviceSecretPaths: [
+      { serviceId: 'science-portal', path: 'deployment.sciencePortal.oidc.clientSecret' },
+      { serviceId: 'skaha', path: 'deployment.skaha.oidc.clientSecret' },
+    ],
+  },
+  {
+    clientId: 'storage-ui',
+    serviceSecretPaths: [
+      { serviceId: 'storage-ui', path: 'deployment.storageUI.oidc.clientSecret' },
+    ],
+  },
+];
+
+/**
+ * Auto-generates OIDC client secrets when they contain CHANGE_ME.
+ * Generates a random 32-byte hex secret and syncs it to both the Dex
+ * staticClients entry and all services that share that clientID.
+ */
+export async function syncOidcClientSecrets(): Promise<void> {
+  const dexDef = SERVICE_CATALOG['dex' as keyof typeof SERVICE_CATALOG];
+  if (!dexDef?.valuesFile) return;
+
+  try {
+    const dexData = await readValuesFile(dexDef.valuesFile);
+    const clients = dexData.staticClients as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(clients)) return;
+
+    let dexChanged = false;
+
+    for (const { clientId, serviceSecretPaths } of OIDC_CLIENT_MAP) {
+      const dexClient = clients.find((c) => c.id === clientId);
+      if (!dexClient) continue;
+
+      const dexSecret = typeof dexClient.secret === 'string' ? dexClient.secret : '';
+      const needsGenerate = !dexSecret || dexSecret.includes('CHANGE_ME');
+
+      const secret = needsGenerate
+        ? randomBytes(32).toString('hex')
+        : dexSecret;
+
+      if (needsGenerate) {
+        dexClient.secret = secret;
+        dexChanged = true;
+      }
+
+      // Fan out the secret to all services that use this clientID
+      for (const { serviceId, path } of serviceSecretPaths) {
+        const def = SERVICE_CATALOG[serviceId as keyof typeof SERVICE_CATALOG];
+        if (!def?.valuesFile) continue;
+        try {
+          const data = await readValuesFile(def.valuesFile);
+          const keys = path.split('.');
+          const current = keys.reduce<unknown>((obj, k) => {
+            if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
+            return undefined;
+          }, data);
+
+          if (current !== secret) {
+            setNestedVal(data, path, secret);
+            await writeValuesFile(def.valuesFile, data);
+          }
+        } catch { continue; }
+      }
+    }
+
+    if (dexChanged) {
+      await writeValuesFile(dexDef.valuesFile, dexData);
+      logger.info('Auto-generated OIDC client secrets and synced to services');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync OIDC client secrets');
+  }
+}
+
+/**
+ * Maps Dex clientID to the service(s) whose callbackURI AND redirectURI
+ * should both appear in the Dex client's redirectURIs whitelist.
+ * Dex needs both registered because the OIDC flow may use either URI
+ * as the redirect_uri parameter at different stages.
+ */
+const DEX_REDIRECT_MAP: Array<{
+  clientId: string;
+  uriPaths: Array<{ serviceId: string; callbackPath: string; redirectPath: string }>;
+}> = [
+  {
+    clientId: 'science-portal',
+    uriPaths: [
+      {
+        serviceId: 'science-portal',
+        callbackPath: 'deployment.sciencePortal.oidc.callbackURI',
+        redirectPath: 'deployment.sciencePortal.oidc.redirectURI',
+      },
+      {
+        serviceId: 'skaha',
+        callbackPath: 'deployment.skaha.oidc.callbackURI',
+        redirectPath: 'deployment.skaha.oidc.redirectURI',
+      },
+    ],
+  },
+  {
+    clientId: 'storage-ui',
+    uriPaths: [
+      {
+        serviceId: 'storage-ui',
+        callbackPath: 'deployment.storageUI.oidc.callbackURI',
+        redirectPath: 'deployment.storageUI.oidc.redirectURI',
+      },
+    ],
+  },
+];
+
+/**
+ * Reads both callbackURI and redirectURI from each OIDC service and
+ * ensures Dex's staticClients[].redirectURIs includes both.
+ * Without this, Dex rejects the redirect_uri with "unregistered url".
+ */
+export async function syncDexRedirectUris(): Promise<void> {
+  const dexDef = SERVICE_CATALOG['dex' as keyof typeof SERVICE_CATALOG];
+  if (!dexDef?.valuesFile) return;
+
+  try {
+    const dexData = await readValuesFile(dexDef.valuesFile);
+    const clients = dexData.staticClients as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(clients)) return;
+
+    let changed = false;
+
+    for (const { clientId, uriPaths } of DEX_REDIRECT_MAP) {
+      const dexClient = clients.find((c) => c.id === clientId);
+      if (!dexClient) continue;
+
+      const redirectURIs: string[] = [];
+      for (const { serviceId, callbackPath, redirectPath } of uriPaths) {
+        const def = SERVICE_CATALOG[serviceId as keyof typeof SERVICE_CATALOG];
+        if (!def?.valuesFile) continue;
+        try {
+          const data = await readValuesFile(def.valuesFile);
+
+          // Collect both callbackURI and redirectURI
+          for (const path of [callbackPath, redirectPath]) {
+            const keys = path.split('.');
+            const val = keys.reduce<unknown>((obj, k) => {
+              if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
+              return undefined;
+            }, data);
+            if (typeof val === 'string' && val.length > 0 && !redirectURIs.includes(val)) {
+              redirectURIs.push(val);
+            }
+          }
+        } catch { continue; }
+      }
+
+      if (redirectURIs.length === 0) continue;
+
+      const existing = Array.isArray(dexClient.redirectURIs)
+        ? dexClient.redirectURIs as string[]
+        : [];
+      const missing = redirectURIs.filter((uri) => !existing.includes(uri));
+      if (missing.length > 0) {
+        dexClient.redirectURIs = redirectURIs;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await writeValuesFile(dexDef.valuesFile, dexData);
+      logger.info('Synced Dex staticClients redirectURIs from service callbackURI values');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync Dex redirect URIs');
   }
 }
 

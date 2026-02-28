@@ -3,7 +3,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { swaggerSpec } from './swagger.js';
 import { startStatusPolling } from './services/status.service.js';
-import { ensureDirectories, copyExampleValues, ensureHelmRepos, initializeCerts, checkPrerequisites, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages } from './services/bootstrap.service.js';
+import { ensureDirectories, copyExampleValues, ensureHelmRepos, initializeCerts, checkPrerequisites, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages, syncOidcClientSecrets, syncDexRedirectUris } from './services/bootstrap.service.js';
 import { initializeContext } from './routes/kubernetes.js';
 import { initializeHostIp, initializeApiKeys } from './routes/services.js';
 import { createApp } from './app.js';
@@ -24,6 +24,8 @@ app.listen(config.port, async () => {
   await initializeApiKeys();
   await initializeCerts();
   await syncDexBcryptHash();
+  await syncOidcClientSecrets();
+  await syncDexRedirectUris();
   await syncBaseTraefikConfig();
   await syncTraefikTlsCert();
   await syncUrlProtocol();

@@ -14,14 +14,18 @@ web:
 staticClients:
   - id: science-portal
     redirectURIs:
+      - https://haproxy.cadc.dao.nrc.ca/science-portal
       - https://haproxy.cadc.dao.nrc.ca/science-portal/oidc-callback
+      - https://haproxy.cadc.dao.nrc.ca/skaha
+      - https://haproxy.cadc.dao.nrc.ca/skaha/oidc-callback
     name: Science Portal
-    secret: CHANGE_ME_science_portal_secret
+    secret: CHANGE_ME
   - id: storage-ui
     redirectURIs:
+      - https://haproxy.cadc.dao.nrc.ca/storage/
       - https://haproxy.cadc.dao.nrc.ca/storage/oidc-callback
     name: Storage UI
-    secret: CHANGE_ME_storage_ui_secret
+    secret: CHANGE_ME
 
 enablePasswordDB: true
 

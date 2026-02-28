@@ -146,17 +146,17 @@ async function stepPlatformConfig() {
     return;
   }
 
-  if (!isTTY) {
-    warn('Non-interactive mode — edit CHANGE_ME placeholders in helm-values/ manually');
-    return;
-  }
-
-  // Ask for hostname
+  // In non-TTY mode, use defaults and auto-generate everything
   const DEFAULT_HOST = 'haproxy.cadc.dao.nrc.ca';
-  const hostname = (await ask(`Platform hostname [${DEFAULT_HOST}]: `)) || DEFAULT_HOST;
+  let hostname = DEFAULT_HOST;
+  let adminPassword = 'Test123!';
 
-  // Ask for admin password
-  const adminPassword = (await ask('Admin password for Dex login [Test123!]: ')) || 'Test123!';
+  if (isTTY) {
+    hostname = (await ask(`Platform hostname [${DEFAULT_HOST}]: `)) || DEFAULT_HOST;
+    adminPassword = (await ask('Admin password for Dex login [Test123!]: ')) || 'Test123!';
+  } else {
+    info('Non-interactive mode — using defaults and auto-generating secrets');
+  }
 
   // Generate bcrypt hash for Dex
   let dexHash = '';
@@ -176,20 +176,17 @@ async function stepPlatformConfig() {
   const cavernDbPassword = generateSecret(16);
   const keycloakPassword = generateSecret(16);
 
-  // Replacement map: pattern → value
-  // Order matters: more specific patterns first
-  const replacements = [
-    ['CHANGE_ME_science_portal_secret', sciencePortalSecret],
-    ['CHANGE_ME_storage_ui_secret', storageUiSecret],
-  ];
-
   // Per-file replacements for CHANGE_ME (context-sensitive)
+  // Dex has multiple CHANGE_ME secrets — we match by surrounding context (id above the secret line)
+  // to assign the correct generated secret to each client.
   const fileReplacements = {
     'dex-values.yaml': [
+      // hash for static passwords
       [/^(\s+hash:)\s*CHANGE_ME$/m, `$1 ${dexHash}`],
-      [/^(\s+secret:)\s*CHANGE_ME_science_portal_secret$/m, `$1 ${sciencePortalSecret}`],
-      [/^(\s+secret:)\s*CHANGE_ME_storage_ui_secret$/m, `$1 ${storageUiSecret}`],
-      [/admin@CHANGE_ME/, `admin@${hostname}`],
+      // science-portal client secret (id: science-portal is the line above)
+      [/(id:\s*science-portal[\s\S]*?secret:)\s*CHANGE_ME/, `$1 ${sciencePortalSecret}`],
+      // storage-ui client secret (id: storage-ui is the line above)
+      [/(id:\s*storage-ui[\s\S]*?secret:)\s*CHANGE_ME/, `$1 ${storageUiSecret}`],
     ],
     'keycloak-values.yaml': [
       [/adminPassword:\s*CHANGE_ME/, `adminPassword: ${keycloakPassword}`],
@@ -217,7 +214,7 @@ async function stepPlatformConfig() {
     let content = await readFile(filePath, 'utf-8');
     const original = content;
 
-    // Apply specific replacements for this file
+    // Apply context-sensitive replacements for this file
     const specific = fileReplacements[file];
     if (specific) {
       for (const [pattern, replacement] of specific) {
@@ -225,9 +222,10 @@ async function stepPlatformConfig() {
       }
     }
 
-    // Apply generic named-secret replacements
-    for (const [pattern, replacement] of replacements) {
-      content = content.replaceAll(pattern, replacement);
+    // Catch-all: replace any remaining CHANGE_ME with a generated secret
+    // (handles future additions without needing explicit per-file rules)
+    if (content.includes('CHANGE_ME')) {
+      content = content.replaceAll('CHANGE_ME', generateSecret());
     }
 
     // Replace the default dev hostname if user chose a different one

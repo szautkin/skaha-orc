@@ -7,7 +7,7 @@ import { getServiceStatus, getAllStatuses } from '../services/status.service.js'
 import { readValuesFile, writeValuesFile } from '../services/yaml.service.js';
 import { helmDeploy, helmUninstall } from '../services/helm.service.js';
 import { scaleDeployment } from '../services/kubectl.service.js';
-import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages } from '../services/bootstrap.service.js';
+import { injectCaCertIntoValues, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages, syncOidcClientSecrets, syncDexRedirectUris } from '../services/bootstrap.service.js';
 import { detectDeployMode } from '../services/haproxy.service.js';
 import { runIntegrationTests } from '../services/integration-test.service.js';
 import { logger } from '../logger.js';
@@ -768,7 +768,20 @@ export function findSemanticWarnings(serviceId: string, config: Record<string, u
     }
   }
 
-  // 11. Registry: warn if core service entries are missing
+  // 11. Dex: warn if any staticClients secret is CHANGE_ME
+  if (serviceId === 'dex') {
+    const clients = config.staticClients;
+    if (Array.isArray(clients)) {
+      for (const entry of clients as Array<Record<string, unknown>>) {
+        const secret = typeof entry.secret === 'string' ? entry.secret : '';
+        if (!secret || secret.includes('CHANGE_ME')) {
+          warnings.push(`staticClients[${entry.id}].secret: CHANGE_ME — OIDC login will fail`);
+        }
+      }
+    }
+  }
+
+  // 12. Registry: warn if core service entries are missing
   if (serviceId === 'reg') {
     const entries = getNestedValue(config, 'application.serviceEntries');
     if (Array.isArray(entries)) {
@@ -975,6 +988,8 @@ router.post('/services/:id/deploy', async (req, res) => {
     // Ensure CA cert + volume mounts are in values before deploying
     try { await injectCaCertIntoValues(); } catch { /* CA may not exist yet */ }
     try { await syncDexBcryptHash(); } catch { /* best-effort */ }
+    try { await syncOidcClientSecrets(); } catch { /* best-effort */ }
+    try { await syncDexRedirectUris(); } catch { /* best-effort */ }
     try { await syncBaseTraefikConfig(); } catch { /* best-effort */ }
     try { await syncTraefikTlsCert(); } catch { /* best-effort */ }
     try { await syncUrlProtocol(); } catch { /* best-effort */ }
