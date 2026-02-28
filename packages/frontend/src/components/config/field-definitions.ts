@@ -138,6 +138,13 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           path: 'workload.storageClassName',
           placeholder: 'Leave empty for default',
         },
+        {
+          name: 'wlNodeName',
+          label: 'Node Name (local dev)',
+          type: 'text',
+          path: 'workload.nodeName',
+          placeholder: 'docker-desktop',
+        },
       ],
     },
   ],
@@ -191,7 +198,7 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           label: 'Seed Users (YAML)',
           type: 'textarea',
           path: 'postgres.seed.users',
-          placeholder: '- username: szautkin\n  uid: 10000',
+          placeholder: '- username: admin\n  uid: 10000',
         },
       ],
     },
@@ -853,6 +860,30 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
           label: 'Base URL',
           type: 'text',
           path: 'config.baseURL',
+        },
+      ],
+    },
+    {
+      title: 'Users (GMS)',
+      fields: [
+        {
+          name: 'users',
+          label: 'Users (YAML)',
+          type: 'textarea',
+          path: 'users',
+          placeholder: 'admin:\n  userID: admin\n  email: admin@example.com\n  posixDetails:\n    uid: 10000\n    gid: 10000',
+        },
+      ],
+    },
+    {
+      title: 'Groups (GMS)',
+      fields: [
+        {
+          name: 'groups',
+          label: 'Groups (YAML)',
+          type: 'textarea',
+          path: 'groups',
+          placeholder: 'skaha-users:\n  groupID: skaha-users\n  ownerID: admin\n  userMembers: [admin]',
         },
       ],
     },

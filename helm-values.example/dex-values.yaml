@@ -22,8 +22,11 @@ staticClients:
 
 enablePasswordDB: true
 
+# Default admin user — password: Test123!
+# Generate new hash: htpasswd -nbBC 10 "" 'YourPassword' | cut -d: -f2
 staticPasswords:
-  - email: admin@example.com
-    hash: $2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W
+  - email: admin@haproxy.cadc.dao.nrc.ca
+    hash: $2y$10$VT7Zyul3YGQHggKdT6FKg.vph2IWyUgreuoa6rjd0LimPyvcZABtu
     username: admin
+    preferredUsername: admin
     userID: 08a8684b-db88-4b73-90a9-3cd1661f5466

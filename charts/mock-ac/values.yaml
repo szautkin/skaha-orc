@@ -17,37 +17,71 @@ config:
   resourceID: "ivo://cadc.nrc.ca/gms"
   baseURL: "http://mock-ac.skaha-system.svc.cluster.local/ac"
 
-# Mock users (can be extended via configmap)
+# Mock users — passed as MOCK_AC_USERS env var (JSON).
+# Keys are usernames. Override these to add your own users.
+# Set to empty {} to use built-in defaults from the app.
 users:
+  admin:
+    userID: admin
+    identityType: HTTP
+    firstName: Platform
+    lastName: Admin
+    email: admin@haproxy.cadc.dao.nrc.ca
+    x500: "CN=admin_mock,OU=CADC,O=HIA,C=CA"
+    posixDetails:
+      uid: 10000
+      gid: 10000
+      homeDirectory: /home/10000
   doiadmin:
+    userID: doiadmin
     identityType: X509
     firstName: DOI
     lastName: Administrator
     email: doiadmin@cadc.nrc.ca
-    uid: 10001
-    gid: 10001
+    x500: "CN=doiadmin_mock,OU=CADC,O=HIA,C=CA"
+    posixDetails:
+      uid: 10001
+      gid: 10001
+      homeDirectory: /home/10001
   testuser:
+    userID: testuser
     identityType: HTTP
     firstName: Test
     lastName: User
     email: testuser@cadc.nrc.ca
-    uid: 10002
-    gid: 10002
+    x500: "CN=testuser_mock,OU=CADC,O=HIA,C=CA"
+    posixDetails:
+      uid: 10002
+      gid: 10002
+      homeDirectory: /home/10002
 
-# Mock groups
+# Mock groups — passed as MOCK_AC_GROUPS env var (JSON).
+# Keys are group IDs. Skaha requires users to be in skaha-users group.
 groups:
-  - name: RAFTS-test-reviewers
-    owner: doiadmin
-    description: RAFTS Test Reviewers Group
-    members:
-      - doiadmin
-      - testuser
-  - name: platform-users
-    owner: doiadmin
+  skaha-users:
+    groupID: skaha-users
+    ownerID: admin
+    description: Skaha Science Platform Users
+    userMembers: [admin, doiadmin, testuser]
+    groupMembers: []
+  skaha-admins:
+    groupID: skaha-admins
+    ownerID: admin
+    description: Skaha Science Platform Administrators
+    userMembers: [admin, doiadmin]
+    groupMembers: []
+  skaha-headless:
+    groupID: skaha-headless
+    ownerID: admin
+    description: Skaha Headless Session Users
+    userMembers: [admin]
+    groupMembers: []
+  platform-users:
+    groupID: platform-users
+    ownerID: admin
     description: Science Platform Users
-    members:
-      - doiadmin
-      - testuser
+    userMembers: [admin, doiadmin, testuser]
+    groupMembers: []
 
 resources:
   requests:

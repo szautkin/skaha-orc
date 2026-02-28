@@ -1,0 +1,18 @@
+{
+  "name": "mock-ac",
+  "version": "1.0.0",
+  "description": "Mock OpenCADC Access Control service for local development",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "xml2js": "^0.6.2",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

@@ -29,6 +29,14 @@ spec:
           value: "{{ .Values.config.resourceID }}"
         - name: BASE_URL
           value: "{{ .Values.config.baseURL }}"
+        {{- if .Values.users }}
+        - name: MOCK_AC_USERS
+          value: {{ .Values.users | toJson | quote }}
+        {{- end }}
+        {{- if .Values.groups }}
+        - name: MOCK_AC_GROUPS
+          value: {{ .Values.groups | toJson | quote }}
+        {{- end }}
         resources:
           requests:
             memory: {{ .Values.resources.requests.memory }}

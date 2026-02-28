@@ -61,27 +61,27 @@ Caused by: java.lang.NullPointerException
 
 **Root Cause:** Filesystem ownership didn't match posix-mapper database:
 ```
-/data/cavern/home/szautkin  → owned by uid=10000  (from previous install)
-/data/cavern/home/jburke    → owned by uid=10001  (from previous install)
-posix-mapper database       → szautkin = uid=10002 (new auto-assignment)
+/data/cavern/home/admin  → owned by uid=10000  (from previous install)
+/data/cavern/home/testuser    → owned by uid=10001  (from previous install)
+posix-mapper database       → admin = uid=10002 (new auto-assignment)
 ```
 
-When Cavern traversed `/home/szautkin`, it read uid=10000 from the filesystem and queried posix-mapper for that uid. Posix-mapper had no mapping for uid=10000 → empty response → `readLine()` returned null → NPE in `line.split()`.
+When Cavern traversed `/home/admin`, it read uid=10000 from the filesystem and queried posix-mapper for that uid. Posix-mapper had no mapping for uid=10000 → empty response → `readLine()` returned null → NPE in `line.split()`.
 
 **Bug detail:** `cadc-gms-1.0.14.jar` (Cavern) has no null-check before parsing. Fixed in 1.0.19 (used by Skaha), but Cavern image ships 1.0.14.
 
 **Fix:** Updated posix-mapper PostgreSQL directly:
 ```sql
-UPDATE mapping.users SET uid = 10000 WHERE username = 'szautkin';
-UPDATE mapping.groups SET gid = 10000 WHERE groupuri LIKE '%szautkin';
-INSERT INTO mapping.users (uid, username) VALUES (10001, 'jburke');
+UPDATE mapping.users SET uid = 10000 WHERE username = 'admin';
+UPDATE mapping.groups SET gid = 10000 WHERE groupuri LIKE '%admin';
+INSERT INTO mapping.users (uid, username) VALUES (10001, 'testuser');
 INSERT INTO mapping.groups (gid, groupuri) VALUES (10001,
-  'ivo://default-group-should-be-ignored.opencadc.org/default-group?jburke');
+  'ivo://default-group-should-be-ignored.opencadc.org/default-group?testuser');
 ```
 
 **Posix-mapper TSV response format** (verified via curl with JWT):
 ```
-szautkin	10000	10000
+admin	10000	10000
 ```
 Three columns: `username\tuid\tdefaultGroupGid`
 
@@ -131,14 +131,14 @@ spec:
 
 After all fixes:
 1. Cavern init: `root node: /data/cavern owner: 0(root)` — no errors
-2. Cavern node access: `GET /cavern/nodes/home/szautkin` → returns VOSpace XML with files
+2. Cavern node access: `GET /cavern/nodes/home/admin` → returns VOSpace XML with files
 3. Session creation: `POST /science-portal/session` → success
 
 ```bash
 # Test Cavern directly
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  https://haproxy.cadc.dao.nrc.ca/cavern/nodes/home/szautkin
-# Returns: <vos:node uri="vos://cadc.nrc.ca~cavern/home/szautkin" ...>
+  https://haproxy.cadc.dao.nrc.ca/cavern/nodes/home/admin
+# Returns: <vos:node uri="vos://cadc.nrc.ca~cavern/home/admin" ...>
 ```
 
 ---
@@ -158,7 +158,7 @@ After fixing all three issues, these pods needed restart (in order):
 | File | Change |
 |------|--------|
 | `packages/backend/helm-values/cavern-values.yaml` | rootOwner: root/0/0, dataDir: /data, fsGroup: 10000 |
-| posix-mapper-postgres DB (runtime) | szautkin uid 10002→10000, added jburke uid=10001, added cavern uid=1000 |
+| posix-mapper-postgres DB (runtime) | admin uid 10002→10000, added testuser uid=10001, added cavern uid=1000 |
 | skaha-workload-pv/pvc (runtime) | Recreated with Retain policy |
 
 ---

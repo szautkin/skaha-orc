@@ -296,6 +296,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
     const wlAccessModes = (wl.accessModes ?? ['ReadWriteMany']) as string[];
     const wlAccessMode = wlAccessModes[0] || 'ReadWriteMany';
     const wlHostPath = String(wl.hostPath || hostPath || '/var/lib/k8s-pvs/science-platform');
+    const wlNodeName = String(wl.nodeName || 'docker-desktop');
 
     // Workload PV uses local volume with node affinity for local dev,
     // or the same NFS/hostPath source as cavern for production
@@ -315,7 +316,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
           `            - key: kubernetes.io/hostname`,
           `              operator: In`,
           `              values:`,
-          `                - docker-desktop`,
+          `                - ${wlNodeName}`,
         ];
 
     const wlPvLines = [

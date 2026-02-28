@@ -18,7 +18,7 @@ deployment:
     resourceID: ivo://cadc.nrc.ca/doi
 
     # DOI service configuration
-    vospaceParentUri: "vos://cadc.nrc.ca~cavern/home/jburke/rafts"
+    vospaceParentUri: "vos://cadc.nrc.ca~cavern/home/admin/rafts"
     metaDataPrefix: "doi-"
     groupPrefix: "TEST.RAFTS-"
     landingUrl: "https://www.canfar.net/citation/landing"

@@ -231,7 +231,47 @@ export async function runIntegrationTests(serviceId: ServiceId): Promise<TestRes
     }));
   }
 
-  // 7. volumes: verify both cavern and workload PVCs exist and are bound
+  // 7. mock-ac: verify GMS groups are configured
+  if (serviceId === 'mock-ac') {
+    results.push(await timedTest('GMS Groups Available', async () => {
+      const url = `https://${hostname}/ac/groups`;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (!res.ok) return { status: 'fail' as const, message: `HTTP ${res.status}` };
+        const text = await res.text();
+        const hasSkaha = text.includes('skaha-users');
+        if (hasSkaha) {
+          return { status: 'pass' as const, message: 'skaha-users group found in GMS' };
+        }
+        return { status: 'fail' as const, message: 'skaha-users group NOT found — sessions will fail authorization' };
+      } catch (err) {
+        return { status: 'fail' as const, message: `GMS request failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }));
+
+    results.push(await timedTest('User Lookup', async () => {
+      const url = `https://${hostname}/ac/users/admin`;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (!res.ok) return { status: 'fail' as const, message: `HTTP ${res.status} — admin user not found` };
+        const text = await res.text();
+        if (text.includes('admin')) {
+          return { status: 'pass' as const, message: 'admin user found in GMS' };
+        }
+        return { status: 'fail' as const, message: 'Response does not contain admin user' };
+      } catch (err) {
+        return { status: 'fail' as const, message: `User lookup failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }));
+  }
+
+  // 8. volumes: verify both cavern and workload PVCs exist and are bound
   if (serviceId === 'volumes') {
     results.push(await timedTest('Cavern PVC', async () => {
       try {

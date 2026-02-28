@@ -22,5 +22,5 @@ postgres:
   # Without this, auto-assigned UIDs may mismatch and cause Cavern NPE.
   seed:
     users:
-      - username: your-username
+      - username: admin
         uid: 10000

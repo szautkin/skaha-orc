@@ -51,9 +51,9 @@ Seed users are configured in `posix-mapper-postgres.yaml` (used by Layer 3):
 postgres:
   seed:
     users:
-      - username: szautkin
+      - username: admin
         uid: 10000
-      - username: jburke
+      - username: testuser
         uid: 10001
 ```
 
@@ -78,7 +78,7 @@ This catches cases where the PVC was manually deleted or the init scripts didn't
 New "DB User Mappings" test for `posix-mapper` and `posix-mapper-db` services:
 - Queries the DB for user count
 - Verifies each seed user exists with the expected UID
-- Reports mismatches: `"szautkin: expected uid=10000, got uid=10002"`
+- Reports mismatches: `"admin: expected uid=10000, got uid=10002"`
 
 Run via: `POST /api/services/posix-mapper/test`
 
@@ -182,7 +182,7 @@ Run via: `POST /api/services/volumes/test`
 
 **Symptom:** HAProxy pod fails with:
 ```
-unable to stat SSL certificate from file '/Users/szautkin/.../server-cert.pem'
+unable to stat SSL certificate from file '/Users/admin/.../server-cert.pem'
 ```
 or:
 ```
