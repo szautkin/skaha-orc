@@ -4,7 +4,7 @@ import { PLATFORM_HOSTNAME } from '@skaha-orc/shared';
 export const config = {
   port: Number(process.env.PORT ?? 3001),
   helmConfigDir: process.env.HELM_CONFIG_DIR ?? './helm-values',
-  chartBaseDir: process.env.CHART_BASE_DIR ?? './charts',
+  chartBaseDir: process.env.CHART_BASE_DIR ?? '../../charts',
   platformHostname: process.env.PLATFORM_HOSTNAME ?? PLATFORM_HOSTNAME,
   helmBinary: process.env.HELM_BINARY ?? 'helm',
   kubectlBinary: process.env.KUBECTL_BINARY ?? 'kubectl',

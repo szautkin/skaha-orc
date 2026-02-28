@@ -3,7 +3,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { swaggerSpec } from './swagger.js';
 import { startStatusPolling } from './services/status.service.js';
-import { ensureDirectories, copyExampleValues, linkRootCharts, ensureHelmRepos, initializeCerts, checkPrerequisites, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb } from './services/bootstrap.service.js';
+import { ensureDirectories, copyExampleValues, ensureHelmRepos, initializeCerts, checkPrerequisites, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb } from './services/bootstrap.service.js';
 import { initializeContext } from './routes/kubernetes.js';
 import { initializeHostIp, initializeApiKeys } from './routes/services.js';
 import { createApp } from './app.js';
@@ -18,7 +18,6 @@ app.listen(config.port, async () => {
 
   await ensureDirectories();
   await copyExampleValues();
-  await linkRootCharts();
   await ensureHelmRepos();
   await initializeContext();
   await initializeHostIp();

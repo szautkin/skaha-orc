@@ -1,4 +1,4 @@
-import { mkdir, readdir, copyFile, stat, readFile, symlink, readlink } from 'fs/promises';
+import { mkdir, readdir, copyFile, stat, readFile } from 'fs/promises';
 import { resolve, dirname } from 'path';
 import { execa } from 'execa';
 import type { PreflightCheck, PreflightResult } from '@skaha-orc/shared';
@@ -42,7 +42,6 @@ export async function ensureDirectories(): Promise<void> {
   const dirs = [
     config.helmConfigDir,
     dirname(config.haproxy.configPath),
-    config.chartBaseDir,
   ];
   for (const dir of dirs) {
     await mkdir(dir, { recursive: true });
@@ -83,64 +82,6 @@ export async function copyExampleValues(): Promise<void> {
 
   if (copied > 0) {
     logger.info({ copied }, 'Copied missing example values files to helm-values/');
-  }
-}
-
-/**
- * Look for a charts/ directory at the project root and symlink any missing
- * entries into the local charts dir so local chart references resolve.
- */
-export async function linkRootCharts(): Promise<void> {
-  const chartsDir = resolve(config.chartBaseDir);
-
-  // Ensure charts dir exists
-  try {
-    await mkdir(chartsDir, { recursive: true });
-  } catch {
-    return;
-  }
-
-  // Walk up from CWD looking for a charts/ dir that has subdirectories
-  let dir = resolve('.');
-  for (let i = 0; i < 4; i++) {
-    const candidate = resolve(dir, 'charts');
-    // Don't match our own local charts dir
-    if (candidate === chartsDir) {
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-      continue;
-    }
-    if (await dirExists(candidate)) {
-      const entries = await readdir(candidate);
-      let linked = 0;
-      for (const entry of entries) {
-        const src = resolve(candidate, entry);
-        const dest = resolve(chartsDir, entry);
-        try {
-          await readlink(dest);
-          continue; // already linked
-        } catch {
-          // not a symlink, create one
-        }
-        try {
-          const s = await stat(src);
-          if (s.isDirectory()) {
-            await symlink(src, dest);
-            linked++;
-          }
-        } catch {
-          continue;
-        }
-      }
-      if (linked > 0) {
-        logger.info({ from: candidate, linked }, 'Linked missing root charts into local charts/');
-      }
-      return;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
   }
 }
 

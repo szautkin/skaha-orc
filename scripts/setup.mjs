@@ -72,7 +72,7 @@ async function stepEnv() {
 
 async function stepDirectories() {
   console.log(`\n${bold('2. Required directories')}`);
-  const dirs = ['helm-values', 'haproxy', 'charts'];
+  const dirs = ['helm-values', 'haproxy'];
 
   for (const dir of dirs) {
     const p = join(ROOT, dir);

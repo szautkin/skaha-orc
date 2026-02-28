@@ -1,4 +1,6 @@
-import { resolve } from 'path';
+import { resolve, join } from 'path';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
 import { execa } from 'execa';
 import { dump as yamlDump } from 'js-yaml';
 import type { DeploymentPhase, ServiceId } from '@skaha-orc/shared';
@@ -501,62 +503,46 @@ async function kubectlApply(
       }
     }
 
-    // Apply non-namespace resources
-    const resourceManifest = resourceDocs.join('\n---\n');
-    logger.debug({ serviceId, resourceManifest }, 'Manifest to apply (namespaces removed)');
-
-    let output: string;
-    try {
-      const { stdout, stderr } = await execa(
-        config.kubectlBinary,
-        [...kubeArgs(), 'apply', '-f', '-'],
-        { input: resourceManifest, env: { ...process.env, ...kubeEnv() } },
-      );
-      output = stdout + '\n' + stderr;
-    } catch (applyErr) {
-      const applyDetail = execaErrorDetail(applyErr);
-      const applyOutput = [applyDetail.stderr, applyDetail.stdout].filter(Boolean).join('\n');
-
-      // If existing resources have a corrupted last-applied-configuration annotation
-      // (e.g. from a previous apply with quoted quantity values like "10Gi"),
-      // kubectl apply fails with "unable to parse quantity's suffix" when doing
-      // the three-way merge. Fix: strip the bad annotation from affected resources
-      // and retry.
-      if (applyOutput.includes('unable to parse quantity')) {
-        logger.warn({ serviceId }, 'Detected corrupted last-applied-configuration annotation — stripping and retrying');
-
-        // Extract PV and PVC names from the manifest
-        const nameMatches = [...resourceManifest.matchAll(/kind:\s*(PersistentVolume(?:Claim)?)\s*\nmetadata:\s*\n\s*name:\s*(\S+)(?:\s*\n\s*namespace:\s*(\S+))?/g)];
-        for (const m of nameMatches) {
-          if (!m[1] || !m[2]) continue;
-          const kind = m[1] === 'PersistentVolumeClaim' ? 'pvc' : 'pv';
-          const name = m[2];
-          const ns = m[3];
-          const nsArgs: string[] = ns ? ['-n', ns] : [];
-          try {
-            await execa(config.kubectlBinary, [
-              ...kubeArgs(), 'annotate', kind, name, ...nsArgs,
-              'kubectl.kubernetes.io/last-applied-configuration-',
-              '--overwrite',
-            ], { env: { ...process.env, ...kubeEnv() } });
-            logger.info({ kind, name, ns }, 'Stripped corrupted annotation');
-          } catch {
-            // Resource may not exist yet — that's fine
-          }
-        }
-
-        // Retry apply
+    // Apply each resource document individually via temp file.
+    // This avoids stdin encoding issues and gives clear per-resource errors.
+    const outputs: string[] = [];
+    for (const doc of resourceDocs) {
+      const tmpFile = join(tmpdir(), `skaha-${serviceId}-${Date.now()}.yaml`);
+      try {
+        await writeFile(tmpFile, doc, 'utf-8');
+        logger.info({ serviceId, tmpFile, doc }, 'Applying resource document');
         const { stdout, stderr } = await execa(
           config.kubectlBinary,
-          [...kubeArgs(), 'apply', '-f', '-'],
-          { input: resourceManifest, env: { ...process.env, ...kubeEnv() } },
+          [...kubeArgs(), 'apply', '-f', tmpFile],
+          { env: { ...process.env, ...kubeEnv() } },
         );
-        output = stdout + '\n' + stderr;
-      } else {
-        // Non-quantity error — propagate
-        throw applyErr;
+        outputs.push(stdout, stderr);
+      } catch (applyErr) {
+        const detail = execaErrorDetail(applyErr);
+        const errOut = [detail.stderr, detail.stdout].filter(Boolean).join('\n');
+        logger.warn({ serviceId, errOut, doc }, 'kubectl apply failed for document — trying create --save-config');
+
+        // Fallback: kubectl create --save-config (avoids annotation merge issues)
+        try {
+          // Delete first if it exists with corrupted state
+          await execa(config.kubectlBinary, [
+            ...kubeArgs(), 'delete', '-f', tmpFile, '--ignore-not-found',
+          ], { env: { ...process.env, ...kubeEnv() } });
+          const { stdout, stderr } = await execa(
+            config.kubectlBinary,
+            [...kubeArgs(), 'create', '--save-config', '-f', tmpFile],
+            { env: { ...process.env, ...kubeEnv() } },
+          );
+          outputs.push(stdout, stderr);
+        } catch (createErr) {
+          // Propagate the original apply error for clarity
+          throw applyErr;
+        }
+      } finally {
+        await unlink(tmpFile).catch(() => {});
       }
     }
+    const output = outputs.filter(Boolean).join('\n');
 
     eventBus.broadcast({
       type: 'phase_change',
