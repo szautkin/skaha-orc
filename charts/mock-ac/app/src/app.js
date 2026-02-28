@@ -4,35 +4,13 @@ const crypto = require('crypto');
 
 const app = express();
 
-// RSA Private key for signing tokens (local development only)
-const PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCtXRY+GO6mJHUR
-z5NdzfIyCUSuG8NvgiHhPAdUbIy4wR5vcuyRBMxIkP/5lky9jKnAIYigC3nSt934
-1AH2Lrq8pA9nszvCsYp7dc26wvT/LlPEwJ4ZT8Ocp2hAuZC85Kqmvu/B0KNjLsRC
-gAPovg2c73npb+0GXC1ZAIoWdIxUlz+JWbty3YjdnBDJAqSwgelHc3mYg1KH2FAk
-D6otIvDwqWDd2TzMKtB2bY2RO/VmNsUoy/nJHVJetirUM5E4pFikWvvDW8gyF5IM
-Fm0amqLw/y3lWAi5EbffsXftHK8Ahbqdl4y47mnL1kGl/ZQgH9Vw0WPRCDCLPGuT
-+kBvGl+dAgMBAAECggEAP+tP7aJcr2ZGwcPihlYOI/O13mn/I2h8HGL5IuAI/H+7
-vITHg2qc9W586qXHcqXf2qaijLvedVp0na9xb7boA/CLe4UilhTGxeF38pG6KjIH
-EcahJBz8NxCkSCUDIBpBb0x78t59t26BTzGK/2+/bir/rJmnb05iK+wefcwIB5HH
-JNF5z0PqVmii7wkJ/wXBB+OyiBx/G1takKpmZNzHhbDLDR2gFWLngjmEGkVos9FY
-X6wslmWHP/YNpfaTSmDlttws2SA5jTaFjJYSFuzCweXHza8Tcy9C6ieI4zyNqD07
-of2MdecAdZ+rQRDO4Y1gJJ5rH/fy9D0268ZAeTVTQwKBgQDYQroYNRzfsQ2sLkOq
-oSsAYwqmqXkB1mxjVZMj6McHL78Q4KbC3FWLlgh1isIvdCMIuaLQmHH/h+Rn2/gL
-+XTGwKrOF9YKyn+HftciW6YvWydISM1E46VnFY1QwrTw+CzAaa7wZ9iYPCxwZe5E
-1DpDClqB3HOG5gENqUEoBNldOwKBgQDNOGjpE9qyGg2fuEy0S2b92haINnvkIgJ5
-PIK2BjMGXp8dkMbNaSU7ag841rR6Qu8KPsqHNHNC46Vmu9zbJGPuots7ceinSLXP
-GCUh31aqcn03buGNuuszD/b6Rh79tocIcHxrkROMK9XcJ595kI6UFFyZtRu7kGQI
-OTSHd4lJBwKBgGl1iLh7VhxDhA5d9UOFGqoyoiQJ6ueZf/uk5H8TadM4Vm1NkCTg
-O5s5S+C+DNoFQXxkwmAEpzrcMubu3vQ/7tFpbSHZf9h9TVlu4kxv8weO5QYb8nXQ
-qX0uhl5GxOPpsjEWmGfFzFrYpTcejeXktJCywNYpAfFbwlG+Ivb3/mO3AoGBAJnZ
-rGzwQYg8F/KhzH9t9+xfz3yWvBKvnIMfZi7oPuCLl2Ym36OnLA562KaX7/2oqGRZ
-5qOuIqsG1z1Joa14fqKs3QaXwv+Gdyamx0+5i9OEuXMRYW9LroA9e77tStaSPHGL
-Qvuxa6IuSsodumT8hqdlDHb/W6cl/Jhdqo/UgcuJAoGAXoIQljUrwj2DsPGa5RaN
-C1J2y2bFmEvSLyBlNVAHsmu9xSucK0SF+dO01JA7SYxnpKi0nrN04SzyDNMKu/dJ
-IFCNxp2B5LXCu2jczHOCllItvUvBQX6lXxf1SlY6Fj5qY1HKBdm35eB+njfoSaWZ
-TfA3tFMY1d98xBdQ/z71t0A=
------END PRIVATE KEY-----`;
+// Generate an RSA key pair at startup for token signing (mock/dev only).
+// This avoids embedding a private key in the source code.
+const { privateKey: PRIVATE_KEY } = crypto.generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+});
 
 // Function to sign token data
 function signTokenData(data) {
