@@ -263,7 +263,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
       `    app: cavern`,
       `spec:`,
       `  capacity:`,
-      `    storage: "${capacity}"`,
+      `    storage: ${capacity}`,
       `  accessModes:`,
       `    - ${accessMode}`,
       `  storageClassName: "${storageClass}"`,
@@ -282,7 +282,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
       `  storageClassName: "${storageClass}"`,
       `  resources:`,
       `    requests:`,
-      `      storage: "${capacity}"`,
+      `      storage: ${capacity}`,
       `  volumeName: skaha-pv`,
     ];
 
@@ -330,7 +330,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
       `    helm.sh/resource-policy: keep`,
       `spec:`,
       `  capacity:`,
-      `    storage: "${wlCapacity}"`,
+      `    storage: ${wlCapacity}`,
       `  accessModes:`,
       `    - ${wlAccessMode}`,
       `  storageClassName: "${wlStorageClass}"`,
@@ -351,7 +351,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
       `  storageClassName: "${wlStorageClass}"`,
       `  resources:`,
       `    requests:`,
-      `      storage: "${wlCapacity}"`,
+      `      storage: ${wlCapacity}`,
       `  volumeName: ${wlPvName}`,
     ];
 
@@ -407,7 +407,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
       `    - ReadWriteOnce`,
       `  resources:`,
       `    requests:`,
-      `      storage: "${storageSize}"`,
+      `      storage: ${storageSize}`,
       `---`,
       `apiVersion: apps/v1`,
       `kind: Deployment`,
