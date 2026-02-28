@@ -518,7 +518,7 @@ async function kubectlApply(
   try {
     const { stdout, stderr } = await execa(
       config.kubectlBinary,
-      [...kubeArgs(), 'apply', '-f', '-'],
+      [...kubeArgs(), 'apply', '--server-side', '--force-conflicts', '-f', '-'],
       { input: manifest, env: { ...process.env, ...kubeEnv() } },
     );
     const output = stdout + '\n' + stderr;
