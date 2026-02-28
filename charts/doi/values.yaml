@@ -29,9 +29,9 @@ deployment:
     # DataCite configuration
     datacite:
       mdsUrl: "https://mds.test.datacite.org"
-      accountPrefix: "10.80791"
-      username: "NRC.CADC"
-      password: "q3t-zLAFY8Em"
+      accountPrefix: "CHANGE_ME"
+      username: "CHANGE_ME"
+      password: "CHANGE_ME"
 
     # Registry configuration
     registryURL: https://haproxy.cadc.dao.nrc.ca/reg

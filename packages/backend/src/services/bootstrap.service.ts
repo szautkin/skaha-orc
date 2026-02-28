@@ -87,16 +87,15 @@ export async function copyExampleValues(): Promise<void> {
 }
 
 /**
- * If the local charts directory is empty, look for a charts/ directory at the
- * project root and symlink its contents so local chart references resolve.
+ * Look for a charts/ directory at the project root and symlink any missing
+ * entries into the local charts dir so local chart references resolve.
  */
 export async function linkRootCharts(): Promise<void> {
   const chartsDir = resolve(config.chartBaseDir);
 
-  // Skip if charts dir already has content
+  // Ensure charts dir exists
   try {
-    const entries = await readdir(chartsDir);
-    if (entries.length > 0) return;
+    await mkdir(chartsDir, { recursive: true });
   } catch {
     return;
   }
@@ -105,7 +104,7 @@ export async function linkRootCharts(): Promise<void> {
   let dir = resolve('.');
   for (let i = 0; i < 4; i++) {
     const candidate = resolve(dir, 'charts');
-    // Don't match our own empty charts dir
+    // Don't match our own local charts dir
     if (candidate === chartsDir) {
       const parent = dirname(dir);
       if (parent === dir) break;
@@ -114,6 +113,7 @@ export async function linkRootCharts(): Promise<void> {
     }
     if (await dirExists(candidate)) {
       const entries = await readdir(candidate);
+      let linked = 0;
       for (const entry of entries) {
         const src = resolve(candidate, entry);
         const dest = resolve(chartsDir, entry);
@@ -127,13 +127,14 @@ export async function linkRootCharts(): Promise<void> {
           const s = await stat(src);
           if (s.isDirectory()) {
             await symlink(src, dest);
+            linked++;
           }
         } catch {
           continue;
         }
       }
-      if (entries.length > 0) {
-        logger.info({ from: candidate, count: entries.length }, 'Linked root charts into local charts/');
+      if (linked > 0) {
+        logger.info({ from: candidate, linked }, 'Linked missing root charts into local charts/');
       }
       return;
     }

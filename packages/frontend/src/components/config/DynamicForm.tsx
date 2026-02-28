@@ -1,5 +1,6 @@
 import { useForm, FormProvider } from 'react-hook-form';
 import { Save, Loader2 } from 'lucide-react';
+import yaml from 'js-yaml';
 import { FieldRenderer, type FieldDef } from './FieldRenderer';
 
 export interface FieldSection {
@@ -49,6 +50,9 @@ function flattenToFormValues(
       // For array/object fields (like extra-hosts), preserve as-is
       if (field.type === 'extra-hosts') {
         flat[field.path] = val ?? [];
+      } else if (field.type === 'textarea' && val != null && typeof val === 'object') {
+        // Serialize arrays/objects to YAML text for textarea display
+        flat[field.path] = yaml.dump(val, { flowLevel: -1, lineWidth: -1 }).trim();
       } else {
         flat[field.path] = val ?? '';
       }
@@ -60,11 +64,31 @@ function flattenToFormValues(
 function unflattenFormValues(
   flat: Record<string, unknown>,
   original: Record<string, unknown>,
+  sections: FieldSection[],
 ): Record<string, unknown> {
+  // Build a set of textarea field paths for YAML parsing
+  const textareaPaths = new Set<string>();
+  for (const section of sections) {
+    for (const field of section.fields) {
+      if (field.type === 'textarea') textareaPaths.add(field.path);
+    }
+  }
+
   // Start with original so we preserve keys not in the form
   const result = structuredClone(original);
   for (const [path, value] of Object.entries(flat)) {
-    setNestedValue(result, path, value);
+    if (textareaPaths.has(path) && typeof value === 'string' && value.trim()) {
+      // Parse YAML text back to structured data
+      try {
+        const parsed = yaml.load(value);
+        setNestedValue(result, path, parsed);
+      } catch {
+        // If YAML parse fails, store as-is
+        setNestedValue(result, path, value);
+      }
+    } else {
+      setNestedValue(result, path, value);
+    }
   }
   return result;
 }
@@ -81,7 +105,7 @@ export function DynamicForm({ sections, values, onSave, isSaving }: DynamicFormP
   } = methods;
 
   const onSubmit = (data: Record<string, unknown>) => {
-    const merged = unflattenFormValues(data, values);
+    const merged = unflattenFormValues(data, values, sections);
     onSave(merged);
   };
 
