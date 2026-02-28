@@ -519,8 +519,11 @@ export async function syncPosixMapperAuthorizedClients(): Promise<void> {
 
 /**
  * Ensures storage-ui feature flags are set in values for org.opencadc.vosui.properties.
- * Without these, the VOSpace UI lacks batch download/upload, paging, and direct download
- * capabilities — confusing for first-time users.
+ * Without these, the VOSpace UI returns 404 because the Helm chart template expects
+ * the flags at deployment.storageUI.backend.services.<name>.features.<flag>.
+ *
+ * The chart template iterates over backend.services and renders:
+ *   org.opencadc.vosui.<name>.service.features.batchDownload = {{ $nameConfig.features.batchDownload }}
  */
 export async function syncStorageUiFeatureFlags(): Promise<void> {
   const def = SERVICE_CATALOG['storage-ui'];
@@ -536,20 +539,39 @@ export async function syncStorageUiFeatureFlags(): Promise<void> {
 
   try {
     const data = await readValuesFile(def.valuesFile);
-    const storageUI = ((data.deployment as Record<string, unknown>)?.storageUI ?? {}) as Record<string, unknown>;
+    const deployment = (data.deployment ?? {}) as Record<string, unknown>;
+    const storageUI = (deployment.storageUI ?? {}) as Record<string, unknown>;
+    const backend = (storageUI.backend ?? {}) as Record<string, unknown>;
+    const services = (backend.services ?? {}) as Record<string, Record<string, unknown>>;
 
+    // Clean up old top-level flags from previous bootstrap (wrong placement)
     let changed = false;
-    for (const [flag, defaultVal] of Object.entries(FLAGS)) {
-      if (storageUI[flag] === undefined) {
-        storageUI[flag] = defaultVal;
+    for (const flag of Object.keys(FLAGS)) {
+      if (flag in storageUI) {
+        delete storageUI[flag];
         changed = true;
       }
     }
 
+    // Inject feature flags into each backend service (e.g., cavern)
+    for (const [, svcConfig] of Object.entries(services)) {
+      const features = (svcConfig.features ?? {}) as Record<string, unknown>;
+      for (const [flag, defaultVal] of Object.entries(FLAGS)) {
+        if (features[flag] === undefined) {
+          features[flag] = defaultVal;
+          changed = true;
+        }
+      }
+      svcConfig.features = features;
+    }
+
     if (changed) {
-      (data.deployment as Record<string, unknown>).storageUI = storageUI;
+      backend.services = services;
+      storageUI.backend = backend;
+      deployment.storageUI = storageUI;
+      data.deployment = deployment;
       await writeValuesFile(def.valuesFile, data);
-      logger.info('Auto-set storage-ui feature flags (batchDownload, batchUpload, externalLinks, paging, directDownload)');
+      logger.info('Auto-set storage-ui feature flags in backend.services.*.features');
     }
   } catch (err) {
     logger.debug({ err }, 'Could not sync storage-ui feature flags (values file may not exist yet)');

@@ -7,13 +7,6 @@ deployment:
   storageUI:
     registryURL: https://haproxy.cadc.dao.nrc.ca/reg
     themeName: src
-    # Feature flags for org.opencadc.vosui.properties — all enabled by default for OOBE.
-    # Bootstrap auto-sets these if missing.
-    batchDownload: true
-    batchUpload: true
-    externalLinks: true
-    paging: true
-    directDownload: true
     oidc:
       uri: https://haproxy.cadc.dao.nrc.ca/dex
       clientID: storage-ui
@@ -28,6 +21,15 @@ deployment:
           resourceID: ivo://cadc.nrc.ca/cavern
           nodeURIPrefix: vos://cadc.nrc.ca~cavern
           userHomeDir: /home
+          # Feature flags for org.opencadc.vosui.properties — all enabled by default.
+          # Bootstrap auto-sets these if missing. The chart template reads from
+          # backend.services.<name>.features.<flag> to render the properties file.
+          features:
+            batchDownload: true
+            batchUpload: true
+            externalLinks: true
+            paging: true
+            directDownload: true
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca
