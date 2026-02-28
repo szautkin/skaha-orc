@@ -1,9 +1,29 @@
 # POSIX Mapper — example values
 # Hostnames are auto-configured by: npm run setup
+# Bootstrap auto-syncs: gmsID, authorizedClients, postgresql connection
 
 deployment:
+  hostname: haproxy.cadc.dao.nrc.ca
   posixMapper:
     oidcURI: https://haproxy.cadc.dao.nrc.ca/dex
+    resourceID: ivo://cadc.nrc.ca/posix-mapper
+    registryURL: images.opencadc.org
+    gmsID: ivo://cadc.nrc.ca/gms
+    minUID: 10000
+    authorizedClients:
+      - sshd
+      - cavern
+      - skaha
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca
+
+# PostgreSQL connection — auto-synced by bootstrap from posix-mapper-postgres values.
+# Only set manually if using an external DB.
+# postgresql:
+#   maxActive: 8
+#   url: jdbc:postgresql://posix-mapper-postgres.skaha-system:5432/posixmapper
+#   schema: mapping
+#   auth:
+#     username: posixmapper
+#     password: ...

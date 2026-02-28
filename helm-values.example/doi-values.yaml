@@ -1,6 +1,19 @@
-# DOI — example values
+# DOI — example values (optional service)
+# Hostnames are auto-configured by: npm run setup
+# Bootstrap auto-syncs: gmsID
+# NOTE: DataCite credentials must be configured manually for DOI minting.
 
 deployment:
+  hostname: haproxy.cadc.dao.nrc.ca
+  doi:
+    registryURL: images.opencadc.org
+    # DataCite integration — required for DOI minting.
+    # Test API: https://mds.test.datacite.org  Production: https://mds.datacite.org
+    datacite:
+      mdsUrl: https://mds.test.datacite.org
+      accountPrefix: ""
+      username: ""
+      password: ""
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca

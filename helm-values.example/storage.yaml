@@ -1,8 +1,12 @@
 # Storage UI — example values
 # Hostnames and secrets are auto-configured by: npm run setup
+# Bootstrap auto-syncs: gmsID, CA cert
 
 deployment:
+  hostname: haproxy.cadc.dao.nrc.ca
   storageUI:
+    registryURL: images.opencadc.org
+    themeName: src
     oidc:
       uri: https://haproxy.cadc.dao.nrc.ca/dex
       clientID: storage-ui
@@ -10,6 +14,13 @@ deployment:
       redirectURI: https://haproxy.cadc.dao.nrc.ca/storage
       callbackURI: https://haproxy.cadc.dao.nrc.ca/storage/oidc-callback
       scope: openid profile
+    backend:
+      defaultService: cavern
+      services:
+        cavern:
+          resourceID: ivo://cadc.nrc.ca/cavern
+          nodeURIPrefix: vos://cadc.nrc.ca~cavern
+          userHomeDir: /home
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca

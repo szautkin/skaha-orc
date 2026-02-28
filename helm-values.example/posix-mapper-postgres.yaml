@@ -19,8 +19,8 @@ postgres:
       resources:
         requests:
           storage: 1Gi
-  # Seed users are inserted on fresh DB init. UIDs must match filesystem ownership.
-  # Without this, auto-assigned UIDs may mismatch and cause Cavern NPE.
+  # Seed users inserted on fresh DB init. UIDs must match mock-ac users
+  # and filesystem ownership. Without this, auto-assigned UIDs mismatch.
   seed:
     users:
       - username: admin

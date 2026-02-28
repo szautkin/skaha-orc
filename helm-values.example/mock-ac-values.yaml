@@ -18,6 +18,47 @@ config:
   resourceID: "ivo://cadc.nrc.ca/gms"
   baseURL: "https://haproxy.cadc.dao.nrc.ca/ac"
 
+# Mock users — keys are usernames. UIDs must match posix-mapper seed users.
+users:
+  admin:
+    userID: admin
+    identityType: HTTP
+    firstName: Platform
+    lastName: Admin
+    email: admin@haproxy.cadc.dao.nrc.ca
+    x500: "CN=admin_mock,OU=CADC,O=HIA,C=CA"
+    posixDetails:
+      uid: 10000
+      gid: 10000
+      homeDirectory: /home/10000
+
+# Mock groups — Skaha requires users to be in skaha-users group.
+groups:
+  skaha-users:
+    groupID: skaha-users
+    ownerID: admin
+    description: Skaha Science Platform Users
+    userMembers: [admin]
+    groupMembers: []
+  skaha-admins:
+    groupID: skaha-admins
+    ownerID: admin
+    description: Skaha Science Platform Administrators
+    userMembers: [admin]
+    groupMembers: []
+  skaha-headless:
+    groupID: skaha-headless
+    ownerID: admin
+    description: Skaha Headless Session Users
+    userMembers: [admin]
+    groupMembers: []
+  platform-users:
+    groupID: platform-users
+    ownerID: admin
+    description: Science Platform Users
+    userMembers: [admin]
+    groupMembers: []
+
 resources:
   requests:
     memory: "64Mi"

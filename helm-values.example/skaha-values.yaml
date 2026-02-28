@@ -1,23 +1,42 @@
 # Skaha — example values
 # Hostnames and secrets are auto-configured by: npm run setup
+# Bootstrap auto-syncs: gmsID, CA cert
 
 deployment:
   hostname: haproxy.cadc.dao.nrc.ca
+  skaha:
+    registryURL: images.opencadc.org
+    oidcURI: https://haproxy.cadc.dao.nrc.ca/dex
+    gmsID: ivo://cadc.nrc.ca/gms
+    posixMapperResourceID: ivo://cadc.nrc.ca/posix-mapper
+    skahaTld: haproxy.cadc.dao.nrc.ca
+    usersGroup: ivo://cadc.nrc.ca/gms?skaha-users
+    adminsGroup: ivo://cadc.nrc.ca/gms?skaha-admins
+    headlessGroup: ivo://cadc.nrc.ca/gms?skaha-headless
+    registryHosts: images.opencadc.org
+    oidc:
+      uri: https://haproxy.cadc.dao.nrc.ca/dex
+      clientID: science-portal
+      clientSecret: CHANGE_ME
+      callbackURI: https://haproxy.cadc.dao.nrc.ca/skaha/oidc-callback
+      redirectURI: https://haproxy.cadc.dao.nrc.ca/skaha
+      scope: openid profile
+    sessions:
+      maxCount: 5
+      gpuEnabled: false
+      userStorage:
+        topLevelDirectory: /cavern
+        homeDirectory: home
+        projectsDirectory: projects
+        persistentVolumeClaimName: skaha-workload-cavern-pvc
+        serviceURI: ivo://cadc.nrc.ca/cavern
+        nodeURIPrefix: vos://cadc.nrc.ca~cavern
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca
 
-skaha:
-  registryURL: images.opencadc.org
-  oidc:
-    uri: https://haproxy.cadc.dao.nrc.ca/dex
-    clientID: science-portal
-    clientSecret: CHANGE_ME
-    callbackURI: https://haproxy.cadc.dao.nrc.ca/skaha/oidc-callback
-    redirectURI: https://haproxy.cadc.dao.nrc.ca/skaha
-    scope: openid profile
-
-secrets:
-  skaha-tls-secret:
-    tls-cert.pem: ""
-    tls-key.pem: ""
+storage:
+  service:
+    spec:
+      persistentVolumeClaim:
+        claimName: skaha-pvc

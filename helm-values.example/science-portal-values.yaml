@@ -1,8 +1,13 @@
 # Science Portal — example values
 # Hostnames and secrets are auto-configured by: npm run setup
+# Bootstrap auto-syncs: gmsID, CA cert
 
 deployment:
+  hostname: haproxy.cadc.dao.nrc.ca
   sciencePortal:
+    registryURL: images.opencadc.org
+    themeName: src
+    skahaResourceID: ivo://cadc.nrc.ca/skaha
     oidc:
       uri: https://haproxy.cadc.dao.nrc.ca/dex
       clientID: science-portal
@@ -10,6 +15,8 @@ deployment:
       redirectURI: https://haproxy.cadc.dao.nrc.ca/science-portal
       callbackURI: https://haproxy.cadc.dao.nrc.ca/science-portal/oidc-callback
       scope: openid profile
+    sessions:
+      bannerText: ""
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca

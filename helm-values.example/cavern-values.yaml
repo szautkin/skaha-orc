@@ -1,12 +1,31 @@
 # Cavern — example values
 # Hostnames and secrets are auto-configured by: npm run setup
+# Bootstrap auto-syncs: gmsID, rootOwner, CA cert
 
 deployment:
+  hostname: haproxy.cadc.dao.nrc.ca
   cavern:
     oidcURI: https://haproxy.cadc.dao.nrc.ca/dex
+    resourceID: ivo://cadc.nrc.ca/cavern
+    posixMapperResourceID: ivo://cadc.nrc.ca/posix-mapper
+    registryURL: images.opencadc.org
+    identityManagerClass: org.opencadc.auth.StandardIdentityManager
+    filesystem:
+      dataDir: /data
+      subPath: cavern
+      rootOwner:
+        username: root
+        uid: 0
+        gid: 0
   extraHosts:
     - ip: "10.0.0.1"
       hostname: haproxy.cadc.dao.nrc.ca
+
+storage:
+  service:
+    spec:
+      persistentVolumeClaim:
+        claimName: skaha-pvc
 
 postgres:
   install: true
