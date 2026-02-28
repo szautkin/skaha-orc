@@ -228,6 +228,15 @@ export async function helmDeploy(
   }
 }
 
+/** Validate a Kubernetes quantity string (e.g. "10Gi", "500Mi", "1Ti"). */
+function validateQuantity(value: string, field: string): string {
+  const valid = /^\d+(\.\d+)?(Ki|Mi|Gi|Ti|Pi|Ei|m|k|M|G|T|P|E)?$/;
+  if (!valid.test(value)) {
+    throw new Error(`Invalid quantity "${value}" for ${field}. Expected format: <number><suffix> (e.g. 10Gi, 500Mi, 1Ti)`);
+  }
+  return value;
+}
+
 /** Render K8s manifest YAML from a values file for kubectl-type services. */
 function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): string {
   const def = SERVICE_CATALOG[serviceId];
@@ -235,7 +244,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
   if (serviceId === 'volumes') {
     const cavern = (values.cavern ?? {}) as Record<string, unknown>;
     const nfs = (cavern.nfs ?? {}) as Record<string, unknown>;
-    const capacity = String(cavern.capacity || '10Gi');
+    const capacity = validateQuantity(String(cavern.capacity || '10Gi'), 'cavern.capacity');
     const storageClass = String(cavern.storageClassName ?? '');
     const nfsServer = String(nfs.server || '');
     const nfsPath = String(nfs.path || '/data/cavern');
@@ -277,7 +286,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
     const wlPvName = String(wl.pvName || 'skaha-workload-pv');
     const wlPvcName = String(wl.pvcName || 'skaha-workload-cavern-pvc');
     const wlNamespace = String(wl.namespace || 'skaha-workload');
-    const wlCapacity = String(wl.capacity || capacity);
+    const wlCapacity = validateQuantity(String(wl.capacity || capacity), 'workload.capacity');
     const wlStorageClass = String(wl.storageClassName ?? storageClass);
     const wlAccessModes = (wl.accessModes ?? ['ReadWriteMany']) as string[];
     const wlAccessMode = wlAccessModes[0] || 'ReadWriteMany';
@@ -349,7 +358,7 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
     const password = String(auth.password || 'posixmapper');
     const database = String(auth.database || 'posixmapper');
     const schema = String(auth.schema || 'mapping');
-    const storageSize = String(requests.storage || '1Gi');
+    const storageSize = validateQuantity(String(requests.storage || '1Gi'), 'postgres.storage.spec.resources.requests.storage');
 
     return [
       `apiVersion: v1`,
