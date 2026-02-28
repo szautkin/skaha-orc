@@ -11,6 +11,33 @@ import { generateHAProxyConfig, saveHAProxyConfig } from './haproxy.service.js';
 import { readValuesFile, writeValuesFile } from './yaml.service.js';
 import { kubectlExec } from './kubectl.service.js';
 
+/**
+ * Ensures all helm chart repositories from config.helmRepos are added.
+ * Without this, `helm upgrade --install science-platform/base ...` fails
+ * on a fresh machine because the repo isn't registered.
+ */
+export async function ensureHelmRepos(): Promise<void> {
+  const repos = config.helmRepos;
+  for (const [name, url] of Object.entries(repos)) {
+    try {
+      await execa(config.helmBinary, ['repo', 'add', name, url, '--force-update'], {
+        timeout: 30_000,
+      });
+      logger.debug({ name, url }, 'Helm repo added');
+    } catch (err) {
+      logger.warn({ name, url, err }, 'Failed to add helm repo');
+    }
+  }
+
+  // Run helm repo update to fetch latest chart indexes
+  try {
+    await execa(config.helmBinary, ['repo', 'update'], { timeout: 60_000 });
+    logger.info({ repos: Object.keys(repos) }, 'Helm repos ensured and updated');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to update helm repos');
+  }
+}
+
 export async function ensureDirectories(): Promise<void> {
   const dirs = [
     config.helmConfigDir,
@@ -645,6 +672,38 @@ export async function checkPrerequisites(): Promise<PreflightResult> {
   checks.push(
     await checkCli('kubectl-cli', 'Kubectl CLI', config.kubectlBinary, ['version', '--client']),
   );
+
+  // Helm repos check
+  try {
+    const { stdout } = await execa(config.helmBinary, ['repo', 'list', '-o', 'json'], { timeout: 5000 });
+    const repos = JSON.parse(stdout) as Array<{ name: string }>;
+    const repoNames = repos.map((r) => r.name);
+    const missing = Object.keys(config.helmRepos).filter((r) => !repoNames.includes(r));
+    if (missing.length === 0) {
+      checks.push({
+        id: 'helm-repos',
+        label: 'Helm repositories',
+        status: 'ok',
+        message: `All repos configured (${Object.keys(config.helmRepos).join(', ')})`,
+      });
+    } else {
+      checks.push({
+        id: 'helm-repos',
+        label: 'Helm repositories',
+        status: 'warn',
+        message: `Missing repos: ${missing.join(', ')}`,
+        remedy: 'Restart the backend — repos are added automatically on startup',
+      });
+    }
+  } catch {
+    checks.push({
+      id: 'helm-repos',
+      label: 'Helm repositories',
+      status: 'warn',
+      message: 'Could not check helm repos',
+      remedy: 'Ensure helm is installed and run: helm repo list',
+    });
+  }
 
   // Cluster connectivity (warn, not fail)
   try {

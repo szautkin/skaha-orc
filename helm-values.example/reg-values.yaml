@@ -1,0 +1,24 @@
+# IVOA Registry — resolves service resourceIDs to capabilities endpoints.
+# The bootstrap auto-registers GMS (mock-ac) if not already present.
+global:
+  hostname: CHANGE_ME  # e.g. haproxy.cadc.dao.nrc.ca
+application:
+  authority: ivo://cadc.nrc.ca/reg
+  serviceEntries:
+    - id: ivo://cadc.nrc.ca/posix-mapper
+      url: https://CHANGE_ME/posix-mapper/capabilities
+    - id: ivo://cadc.nrc.ca/skaha
+      url: https://CHANGE_ME/skaha/capabilities
+    - id: ivo://cadc.nrc.ca/cavern
+      url: https://CHANGE_ME/cavern/capabilities
+ingress:
+  enabled: true
+  className: base-traefik
+  hosts:
+    - host: CHANGE_ME
+      paths:
+        - path: /reg
+          pathType: Prefix
+service:
+  type: ClusterIP
+  port: 8080

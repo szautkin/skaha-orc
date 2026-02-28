@@ -1,0 +1,29 @@
+# Mock Access Control — provides GMS (Group Management Service) for local dev.
+# Users and groups are passed to the container via environment variables.
+replicaCount: 1
+
+image:
+  repository: mock-ac
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+config:
+  resourceID: "ivo://cadc.nrc.ca/gms"
+  baseURL: "https://CHANGE_ME/ac"
+
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "50m"
+  limits:
+    memory: "128Mi"
+    cpu: "200m"
+
+ingress:
+  enabled: true
+  path: /ac

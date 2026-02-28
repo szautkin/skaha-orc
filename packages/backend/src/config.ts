@@ -11,6 +11,7 @@ export const config = {
   helmRepos: {
     'science-platform': 'https://images.opencadc.org/chartrepo/platform',
     'science-platform-client': 'https://images.opencadc.org/chartrepo/client',
+    'bitnami': 'https://charts.bitnami.com/bitnami',
   },
   defaultNamespace: 'skaha-system',
   statusPollInterval: 10_000,

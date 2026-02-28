@@ -120,8 +120,39 @@ async function stepHelmCheck() {
   }
 }
 
+async function stepHelmRepos() {
+  console.log(`\n${bold('5. Helm chart repositories')}`);
+  const repos = {
+    'science-platform': 'https://images.opencadc.org/chartrepo/platform',
+    'science-platform-client': 'https://images.opencadc.org/chartrepo/client',
+    'bitnami': 'https://charts.bitnami.com/bitnami',
+  };
+
+  // Check if helm is available first
+  if (!run('helm version --short')) {
+    warn('Helm not installed — skipping repo setup');
+    return;
+  }
+
+  for (const [name, url] of Object.entries(repos)) {
+    const result = run(`helm repo add ${name} ${url} --force-update 2>&1`);
+    if (result !== null) {
+      ok(`${name} → ${url}`);
+    } else {
+      fail(`Failed to add ${name}`);
+    }
+  }
+
+  const updateResult = run('helm repo update 2>&1');
+  if (updateResult !== null) {
+    ok('Repo index updated');
+  } else {
+    warn('Failed to update repo index');
+  }
+}
+
 async function stepKubectlCheck() {
-  console.log(`\n${bold('5. Kubectl CLI')}`);
+  console.log(`\n${bold('6. Kubectl CLI')}`);
   const out = run('kubectl version --client -o yaml 2>/dev/null');
   if (out) {
     ok('kubectl available');
@@ -132,7 +163,7 @@ async function stepKubectlCheck() {
 }
 
 async function stepKubeContext() {
-  console.log(`\n${bold('6. Kubernetes context')}`);
+  console.log(`\n${bold('7. Kubernetes context')}`);
   const raw = run('kubectl config get-contexts -o name 2>/dev/null');
   if (!raw) {
     warn('Could not list kube contexts');
@@ -190,6 +221,7 @@ await stepEnv();
 await stepDirectories();
 await stepExampleValues();
 await stepHelmCheck();
+await stepHelmRepos();
 await stepKubectlCheck();
 await stepKubeContext();
 
