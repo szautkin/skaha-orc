@@ -13,3 +13,8 @@ staticClients: []
 enablePasswordDB: true
 
 staticPasswords: []
+
+ingress:
+  enabled: true
+  className: base-traefik
+  host: ""
