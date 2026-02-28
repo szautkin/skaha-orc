@@ -1,5 +1,6 @@
 import { resolve } from 'path';
 import { execa } from 'execa';
+import { dump as yamlDump } from 'js-yaml';
 import type { DeploymentPhase, ServiceId } from '@skaha-orc/shared';
 import { SERVICE_CATALOG } from '@skaha-orc/shared';
 import { config, valuesFilePath } from '../config.js';
@@ -242,49 +243,32 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
     const useNfs = nfsServer.length > 0 && !nfsServer.includes('example') && !nfsServer.includes('CHANGE_ME');
     const accessMode = useNfs ? 'ReadWriteMany' : 'ReadWriteOnce';
 
-    const pvSourceLines = useNfs
-      ? [
-          `  nfs:`,
-          `    server: "${nfsServer}"`,
-          `    path: "${nfsPath}"`,
-        ]
-      : [
-          `  hostPath:`,
-          `    path: "${hostPath || '/var/lib/k8s-pvs/science-platform'}"`,
-          `    type: DirectoryOrCreate`,
-        ];
+    // Build K8s objects as plain JS, then serialize with yaml.dump for correct typing
+    const cavernPv: Record<string, unknown> = {
+      apiVersion: 'v1',
+      kind: 'PersistentVolume',
+      metadata: { name: 'skaha-pv', labels: { app: 'cavern' } },
+      spec: {
+        capacity: { storage: capacity },
+        accessModes: [accessMode],
+        storageClassName: storageClass,
+        ...(useNfs
+          ? { nfs: { server: nfsServer, path: nfsPath } }
+          : { hostPath: { path: hostPath || '/var/lib/k8s-pvs/science-platform', type: 'DirectoryOrCreate' } }),
+      },
+    };
 
-    const pvLines = [
-      `apiVersion: v1`,
-      `kind: PersistentVolume`,
-      `metadata:`,
-      `  name: skaha-pv`,
-      `  labels:`,
-      `    app: cavern`,
-      `spec:`,
-      `  capacity:`,
-      `    storage: ${capacity}`,
-      `  accessModes:`,
-      `    - ${accessMode}`,
-      `  storageClassName: "${storageClass}"`,
-      ...pvSourceLines,
-    ];
-
-    const pvcLines = [
-      `apiVersion: v1`,
-      `kind: PersistentVolumeClaim`,
-      `metadata:`,
-      `  name: skaha-pvc`,
-      `  namespace: ${def.namespace}`,
-      `spec:`,
-      `  accessModes:`,
-      `    - ${accessMode}`,
-      `  storageClassName: "${storageClass}"`,
-      `  resources:`,
-      `    requests:`,
-      `      storage: ${capacity}`,
-      `  volumeName: skaha-pv`,
-    ];
+    const cavernPvc: Record<string, unknown> = {
+      apiVersion: 'v1',
+      kind: 'PersistentVolumeClaim',
+      metadata: { name: 'skaha-pvc', namespace: def.namespace },
+      spec: {
+        accessModes: [accessMode],
+        storageClassName: storageClass,
+        resources: { requests: { storage: capacity } },
+        volumeName: 'skaha-pv',
+      },
+    };
 
     // Workload PV/PVC — used by Skaha session pods to access cavern storage
     const wl = (values.workload ?? {}) as Record<string, unknown>;
@@ -298,87 +282,56 @@ function renderManifest(serviceId: ServiceId, values: Record<string, unknown>): 
     const wlHostPath = String(wl.hostPath || hostPath || '/var/lib/k8s-pvs/science-platform');
     const wlNodeName = String(wl.nodeName || 'docker-desktop');
 
-    // Workload PV uses local volume with node affinity for local dev,
-    // or the same NFS/hostPath source as cavern for production
-    const wlPvSourceLines = useNfs
-      ? [
-          `  nfs:`,
-          `    server: "${nfsServer}"`,
-          `    path: "${nfsPath}"`,
-        ]
-      : [
-          `  local:`,
-          `    path: "${wlHostPath}"`,
-          `  nodeAffinity:`,
-          `    required:`,
-          `      nodeSelectorTerms:`,
-          `        - matchExpressions:`,
-          `            - key: kubernetes.io/hostname`,
-          `              operator: In`,
-          `              values:`,
-          `                - ${wlNodeName}`,
-        ];
+    const workloadPv: Record<string, unknown> = {
+      apiVersion: 'v1',
+      kind: 'PersistentVolume',
+      metadata: {
+        name: wlPvName,
+        labels: { storage: 'skaha-workload-storage' },
+        annotations: { 'helm.sh/resource-policy': 'keep' },
+      },
+      spec: {
+        capacity: { storage: wlCapacity },
+        accessModes: [wlAccessMode],
+        storageClassName: wlStorageClass,
+        persistentVolumeReclaimPolicy: String(wl.reclaimPolicy || 'Retain'),
+        ...(useNfs
+          ? { nfs: { server: nfsServer, path: nfsPath } }
+          : {
+              local: { path: wlHostPath },
+              nodeAffinity: {
+                required: {
+                  nodeSelectorTerms: [{
+                    matchExpressions: [{
+                      key: 'kubernetes.io/hostname',
+                      operator: 'In',
+                      values: [wlNodeName],
+                    }],
+                  }],
+                },
+              },
+            }),
+      },
+    };
 
-    const wlPvLines = [
-      `apiVersion: v1`,
-      `kind: PersistentVolume`,
-      `metadata:`,
-      `  name: ${wlPvName}`,
-      `  labels:`,
-      `    storage: skaha-workload-storage`,
-      `  annotations:`,
-      `    helm.sh/resource-policy: keep`,
-      `spec:`,
-      `  capacity:`,
-      `    storage: ${wlCapacity}`,
-      `  accessModes:`,
-      `    - ${wlAccessMode}`,
-      `  storageClassName: "${wlStorageClass}"`,
-      `  persistentVolumeReclaimPolicy: ${String(wl.reclaimPolicy || 'Retain')}`,
-      ...wlPvSourceLines,
-    ];
+    const workloadPvc: Record<string, unknown> = {
+      apiVersion: 'v1',
+      kind: 'PersistentVolumeClaim',
+      metadata: { name: wlPvcName, namespace: wlNamespace },
+      spec: {
+        accessModes: [wlAccessMode],
+        storageClassName: wlStorageClass,
+        resources: { requests: { storage: wlCapacity } },
+        volumeName: wlPvName,
+      },
+    };
 
-    // Workload PVC lives in the skaha-workload namespace (where session pods run)
-    const wlPvcLines = [
-      `apiVersion: v1`,
-      `kind: PersistentVolumeClaim`,
-      `metadata:`,
-      `  name: ${wlPvcName}`,
-      `  namespace: ${wlNamespace}`,
-      `spec:`,
-      `  accessModes:`,
-      `    - ${wlAccessMode}`,
-      `  storageClassName: "${wlStorageClass}"`,
-      `  resources:`,
-      `    requests:`,
-      `      storage: ${wlCapacity}`,
-      `  volumeName: ${wlPvName}`,
-    ];
-
-    // Ensure both namespaces exist (skaha-system may not exist on first run)
-    const sysNsLines = [
-      `apiVersion: v1`,
-      `kind: Namespace`,
-      `metadata:`,
-      `  name: ${def.namespace}`,
-    ];
-
-    const wlNsLines = [
-      `apiVersion: v1`,
-      `kind: Namespace`,
-      `metadata:`,
-      `  name: ${wlNamespace}`,
-    ];
+    const sysNs = { apiVersion: 'v1', kind: 'Namespace', metadata: { name: def.namespace } };
+    const wlNs = { apiVersion: 'v1', kind: 'Namespace', metadata: { name: wlNamespace } };
 
     // Namespaces first, then PVs (cluster-scoped), then PVCs (namespaced)
-    return [
-      ...sysNsLines, `---`,
-      ...wlNsLines, `---`,
-      ...pvLines, `---`,
-      ...pvcLines, `---`,
-      ...wlPvLines, `---`,
-      ...wlPvcLines,
-    ].join('\n');
+    const objects = [sysNs, wlNs, cavernPv, cavernPvc, workloadPv, workloadPvc];
+    return objects.map((o) => yamlDump(o, { lineWidth: -1, noRefs: true }).trim()).join('\n---\n');
   }
 
   if (serviceId === 'posix-mapper-db') {
@@ -537,7 +490,7 @@ async function kubectlApply(
   try {
     // Extract namespace docs and ensure they exist before applying.
     // This avoids both "namespace not found" and "last-applied-configuration" errors.
-    const docs = manifest.split(/^---$/m);
+    const docs = manifest.split(/^---$/m).map((d) => d.trim()).filter(Boolean);
     const nsDocs = docs.filter((d) => d.includes('kind: Namespace'));
     const resourceDocs = docs.filter((d) => !d.includes('kind: Namespace'));
 
@@ -550,6 +503,7 @@ async function kubectlApply(
 
     // Apply non-namespace resources
     const resourceManifest = resourceDocs.join('\n---\n');
+    logger.debug({ serviceId, resourceManifest }, 'Manifest to apply (namespaces removed)');
     const { stdout, stderr } = await execa(
       config.kubectlBinary,
       [...kubeArgs(), 'apply', '-f', '-'],
