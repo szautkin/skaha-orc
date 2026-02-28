@@ -8,7 +8,7 @@ deployment:
     oidcURI: https://haproxy.cadc.dao.nrc.ca/dex
     resourceID: ivo://cadc.nrc.ca/cavern
     posixMapperResourceID: ivo://cadc.nrc.ca/posix-mapper
-    registryURL: images.opencadc.org
+    registryURL: https://haproxy.cadc.dao.nrc.ca/reg
     identityManagerClass: org.opencadc.auth.StandardIdentityManager
     filesystem:
       dataDir: /data

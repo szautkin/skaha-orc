@@ -6,7 +6,7 @@
 deployment:
   hostname: haproxy.cadc.dao.nrc.ca
   doi:
-    registryURL: images.opencadc.org
+    registryURL: https://haproxy.cadc.dao.nrc.ca/reg
     # DataCite integration — required for DOI minting.
     # Test API: https://mds.test.datacite.org  Production: https://mds.datacite.org
     datacite:

@@ -5,7 +5,7 @@
 deployment:
   hostname: haproxy.cadc.dao.nrc.ca
   storageUI:
-    registryURL: images.opencadc.org
+    registryURL: https://haproxy.cadc.dao.nrc.ca/reg
     themeName: src
     oidc:
       uri: https://haproxy.cadc.dao.nrc.ca/dex

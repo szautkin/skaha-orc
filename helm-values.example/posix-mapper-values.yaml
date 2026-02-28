@@ -7,7 +7,7 @@ deployment:
   posixMapper:
     oidcURI: https://haproxy.cadc.dao.nrc.ca/dex
     resourceID: ivo://cadc.nrc.ca/posix-mapper
-    registryURL: images.opencadc.org
+    registryURL: https://haproxy.cadc.dao.nrc.ca/reg
     gmsID: ivo://cadc.nrc.ca/gms
     minUID: 10000
     authorizedClients:
