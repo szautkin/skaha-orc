@@ -504,12 +504,59 @@ async function kubectlApply(
     // Apply non-namespace resources
     const resourceManifest = resourceDocs.join('\n---\n');
     logger.debug({ serviceId, resourceManifest }, 'Manifest to apply (namespaces removed)');
-    const { stdout, stderr } = await execa(
-      config.kubectlBinary,
-      [...kubeArgs(), 'apply', '-f', '-'],
-      { input: resourceManifest, env: { ...process.env, ...kubeEnv() } },
-    );
-    const output = stdout + '\n' + stderr;
+
+    let output: string;
+    try {
+      const { stdout, stderr } = await execa(
+        config.kubectlBinary,
+        [...kubeArgs(), 'apply', '-f', '-'],
+        { input: resourceManifest, env: { ...process.env, ...kubeEnv() } },
+      );
+      output = stdout + '\n' + stderr;
+    } catch (applyErr) {
+      const applyDetail = execaErrorDetail(applyErr);
+      const applyOutput = [applyDetail.stderr, applyDetail.stdout].filter(Boolean).join('\n');
+
+      // If existing resources have a corrupted last-applied-configuration annotation
+      // (e.g. from a previous apply with quoted quantity values like "10Gi"),
+      // kubectl apply fails with "unable to parse quantity's suffix" when doing
+      // the three-way merge. Fix: strip the bad annotation from affected resources
+      // and retry.
+      if (applyOutput.includes('unable to parse quantity')) {
+        logger.warn({ serviceId }, 'Detected corrupted last-applied-configuration annotation — stripping and retrying');
+
+        // Extract PV and PVC names from the manifest
+        const nameMatches = [...resourceManifest.matchAll(/kind:\s*(PersistentVolume(?:Claim)?)\s*\nmetadata:\s*\n\s*name:\s*(\S+)(?:\s*\n\s*namespace:\s*(\S+))?/g)];
+        for (const m of nameMatches) {
+          if (!m[1] || !m[2]) continue;
+          const kind = m[1] === 'PersistentVolumeClaim' ? 'pvc' : 'pv';
+          const name = m[2];
+          const ns = m[3];
+          const nsArgs: string[] = ns ? ['-n', ns] : [];
+          try {
+            await execa(config.kubectlBinary, [
+              ...kubeArgs(), 'annotate', kind, name, ...nsArgs,
+              'kubectl.kubernetes.io/last-applied-configuration-',
+              '--overwrite',
+            ], { env: { ...process.env, ...kubeEnv() } });
+            logger.info({ kind, name, ns }, 'Stripped corrupted annotation');
+          } catch {
+            // Resource may not exist yet — that's fine
+          }
+        }
+
+        // Retry apply
+        const { stdout, stderr } = await execa(
+          config.kubectlBinary,
+          [...kubeArgs(), 'apply', '-f', '-'],
+          { input: resourceManifest, env: { ...process.env, ...kubeEnv() } },
+        );
+        output = stdout + '\n' + stderr;
+      } else {
+        // Non-quantity error — propagate
+        throw applyErr;
+      }
+    }
 
     eventBus.broadcast({
       type: 'phase_change',
