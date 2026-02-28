@@ -659,6 +659,9 @@ export async function syncBaseTraefikConfig(): Promise<void> {
     let changed = false;
 
     // Ensure traefik.providers.kubernetesCRD.allowCrossNamespace = true
+    // Traefik deploys to `default` namespace but IngressRoutes live in `skaha-system`.
+    // Without this, Traefik ignores all IngressRoutes and every service returns 404.
+    // Note: only kubernetesCRD has allowCrossNamespace — kubernetesIngress does not.
     const crdPath = 'traefik.providers.kubernetesCRD.allowCrossNamespace';
     const crdKeys = crdPath.split('.');
     const crdVal = crdKeys.reduce<unknown>((obj, k) => {
@@ -671,25 +674,240 @@ export async function syncBaseTraefikConfig(): Promise<void> {
       changed = true;
     }
 
-    // Ensure traefik.providers.kubernetesIngress.allowCrossNamespace = true
-    const ingressPath = 'traefik.providers.kubernetesIngress.allowCrossNamespace';
-    const ingressKeys = ingressPath.split('.');
-    const ingressVal = ingressKeys.reduce<unknown>((obj, k) => {
+    if (changed) {
+      await writeValuesFile(baseDef.valuesFile, data);
+      logger.info('Ensured Traefik cross-namespace CRD discovery is enabled in base values');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync base Traefik config');
+  }
+}
+
+/**
+ * Injects the generated TLS cert+key into the base chart values so Traefik
+ * serves our CA-signed cert instead of its auto-generated default cert
+ * ("CN=TRAEFIK DEFAULT CERT"). Without this, Java services don't trust
+ * Traefik's TLS and all inter-service HTTPS calls fail silently.
+ */
+export async function syncTraefikTlsCert(): Promise<void> {
+  const baseDef = SERVICE_CATALOG['base' as keyof typeof SERVICE_CATALOG];
+  if (!baseDef?.valuesFile) return;
+
+  try {
+    if (!(await fileExists(HAPROXY_CERT_PATH))) return;
+
+    const combinedPem = await readFile(HAPROXY_CERT_PATH, 'utf-8');
+
+    // Split combined PEM into cert and key
+    const certMatch = combinedPem.match(/(-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----)/);
+    const keyMatch = combinedPem.match(/(-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA )?PRIVATE KEY-----)/);
+    if (!certMatch || !keyMatch) {
+      logger.warn('Server cert PEM does not contain both cert and key sections');
+      return;
+    }
+
+    const certB64 = Buffer.from(certMatch[1]!).toString('base64');
+    const keyB64 = Buffer.from(keyMatch[1]!).toString('base64');
+
+    const data = await readValuesFile(baseDef.valuesFile);
+    let changed = false;
+
+    // Inject TLS secret: secrets.default-certificate
+    const secrets = ((data.secrets ?? {}) as Record<string, Record<string, string>>);
+    if (!secrets['default-certificate'] ||
+        secrets['default-certificate']['tls.crt'] !== certB64 ||
+        secrets['default-certificate']['tls.key'] !== keyB64) {
+      secrets['default-certificate'] = { 'tls.crt': certB64, 'tls.key': keyB64 };
+      data.secrets = secrets;
+      changed = true;
+    }
+
+    // Point Traefik's default TLS store at our secret
+    const storePath = 'traefik.tlsStore.default.defaultCertificate.secretName';
+    const storeKeys = storePath.split('.');
+    const storeVal = storeKeys.reduce<unknown>((obj, k) => {
       if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
       return undefined;
     }, data);
 
-    if (ingressVal !== true) {
-      setNestedVal(data, ingressPath, true);
+    if (storeVal !== 'default-certificate') {
+      setNestedVal(data, storePath, 'default-certificate');
       changed = true;
     }
 
     if (changed) {
       await writeValuesFile(baseDef.valuesFile, data);
-      logger.info('Ensured Traefik cross-namespace discovery is enabled in base values');
+      logger.info('Injected TLS cert into base chart — Traefik will serve our CA-signed cert');
     }
   } catch (err) {
-    logger.warn({ err }, 'Failed to sync base Traefik config');
+    logger.warn({ err }, 'Failed to sync Traefik TLS cert');
+  }
+}
+
+/**
+ * After the base chart (Traefik) is deployed, discovers the Traefik service
+ * ClusterIP and updates all hostAliases in values files. Pods need to reach
+ * Traefik via its ClusterIP, not the host machine's IP (which may be a
+ * home router like 10.0.0.1 that's unreachable from inside the cluster).
+ */
+export async function syncTraefikClusterIp(): Promise<void> {
+  try {
+    // Discover the Traefik service ClusterIP in the default namespace
+    const { stdout } = await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'get', 'svc', '-n', 'default',
+      '-l', 'app.kubernetes.io/name=traefik',
+      '-o', 'jsonpath={.items[0].spec.clusterIP}',
+    ], { env: { ...process.env, ...kubeEnv() }, timeout: 10_000 });
+
+    const clusterIp = stdout.trim();
+    if (!clusterIp || clusterIp === '<none>') {
+      logger.debug('Traefik service not found or has no ClusterIP (base may not be deployed yet)');
+      return;
+    }
+
+    let updated = 0;
+    for (const def of Object.values(SERVICE_CATALOG)) {
+      if (!def.valuesFile) continue;
+      try {
+        const data = await readValuesFile(def.valuesFile);
+        const deployment = (data.deployment ?? {}) as Record<string, unknown>;
+        const extraHosts = deployment.extraHosts as Array<{ ip: string; hostname: string }> | undefined;
+        if (!Array.isArray(extraHosts)) continue;
+
+        let changed = false;
+        for (const host of extraHosts) {
+          if (host.hostname === PLATFORM_HOSTNAME && host.ip !== clusterIp) {
+            host.ip = clusterIp;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          await writeValuesFile(def.valuesFile, data);
+          updated++;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (updated > 0) {
+      logger.info({ clusterIp, updated }, 'Updated hostAliases to Traefik ClusterIP');
+    }
+  } catch {
+    // Cluster not reachable or base not deployed — skip silently
+    logger.debug('Could not discover Traefik ClusterIP (cluster may not be reachable)');
+  }
+}
+
+/**
+ * Ensures URL fields in values files have the https:// protocol prefix.
+ * Without this, Java's RegistryClient throws MalformedURLException: no protocol.
+ */
+const URL_FIELD_PATHS: Record<string, string[]> = {
+  skaha: [
+    'deployment.skaha.registryURL',
+    'deployment.skaha.oidcURI',
+    'deployment.skaha.oidc.uri',
+    'deployment.skaha.oidc.callbackURI',
+    'deployment.skaha.oidc.redirectURI',
+  ],
+  cavern: [
+    'deployment.cavern.registryURL',
+    'deployment.cavern.oidcURI',
+  ],
+  'posix-mapper': [
+    'deployment.posixMapper.registryURL',
+    'deployment.posixMapper.oidcURI',
+  ],
+  'science-portal': [
+    'deployment.sciencePortal.registryURL',
+    'deployment.sciencePortal.oidc.uri',
+    'deployment.sciencePortal.oidc.callbackURI',
+    'deployment.sciencePortal.oidc.redirectURI',
+  ],
+  'storage-ui': [
+    'deployment.storageUI.registryURL',
+    'deployment.storageUI.oidc.uri',
+    'deployment.storageUI.oidc.callbackURI',
+    'deployment.storageUI.oidc.redirectURI',
+  ],
+  doi: [
+    'deployment.doi.registryURL',
+  ],
+};
+
+export async function syncUrlProtocol(): Promise<void> {
+  let totalFixed = 0;
+
+  for (const [serviceId, paths] of Object.entries(URL_FIELD_PATHS)) {
+    const def = SERVICE_CATALOG[serviceId as keyof typeof SERVICE_CATALOG];
+    if (!def?.valuesFile) continue;
+
+    try {
+      const data = await readValuesFile(def.valuesFile);
+      let changed = false;
+
+      for (const path of paths) {
+        const keys = path.split('.');
+        const val = keys.reduce<unknown>((obj, k) => {
+          if (obj && typeof obj === 'object') return (obj as Record<string, unknown>)[k];
+          return undefined;
+        }, data);
+
+        if (typeof val === 'string' && val.length > 0 &&
+            !val.startsWith('https://') && !val.startsWith('http://')) {
+          // Looks like a hostname without protocol — prepend https://
+          setNestedVal(data, path, `https://${val}`);
+          changed = true;
+          totalFixed++;
+        }
+      }
+
+      if (changed) {
+        await writeValuesFile(def.valuesFile, data);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (totalFixed > 0) {
+    logger.info({ totalFixed }, 'Fixed URL fields missing https:// protocol prefix');
+  }
+}
+
+/**
+ * Detects if the cluster is a Kind cluster and loads locally-built images.
+ * Kind clusters can't pull from external registries without explicit loading.
+ */
+export async function loadKindImages(): Promise<void> {
+  try {
+    // Check if we're running against a Kind cluster
+    const { stdout: contextName } = await execa(config.kubectlBinary, [
+      ...kubeArgs(), 'config', 'current-context',
+    ], { env: { ...process.env, ...kubeEnv() }, timeout: 5_000 });
+
+    if (!contextName.trim().startsWith('kind-')) {
+      return; // Not a Kind cluster
+    }
+
+    const clusterName = contextName.trim().replace('kind-', '');
+
+    // Load mock-ac image into Kind
+    try {
+      await execa('kind', [
+        'load', 'docker-image',
+        'ghcr.io/szautkin/skaha-orc/mock-ac:latest',
+        '--name', clusterName,
+      ], { timeout: 60_000 });
+      logger.info({ clusterName }, 'Loaded mock-ac image into Kind cluster');
+    } catch (err) {
+      // Image may not exist locally — that's OK, Kind will pull from GHCR
+      logger.debug({ err }, 'Could not load mock-ac image into Kind (may pull from GHCR instead)');
+    }
+  } catch {
+    // Not a Kind cluster or kind CLI not available
   }
 }
 

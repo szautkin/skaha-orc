@@ -1,14 +1,24 @@
 # Base (Traefik) — example values
 # Copy this directory to ./helm-values/ and customize
-# Bootstrap auto-syncs: cross-namespace discovery
+# Bootstrap auto-syncs: cross-namespace CRD discovery, TLS cert injection
 
 traefik:
-  enabled: true
+  install: true
   websecure:
     tls:
       enabled: true
   providers:
     kubernetesCRD:
       allowCrossNamespace: true
-    kubernetesIngress:
-      allowCrossNamespace: true
+  # TLS store — bootstrap auto-injects the cert into secrets.default-certificate
+  tlsStore:
+    default:
+      defaultCertificate:
+        secretName: default-certificate
+
+# TLS cert secret — auto-populated by bootstrap from the generated CA-signed cert.
+# Without this, Traefik serves "CN=TRAEFIK DEFAULT CERT" which Java services don't trust.
+# secrets:
+#   default-certificate:
+#     tls.crt: <base64 encoded cert>
+#     tls.key: <base64 encoded key>

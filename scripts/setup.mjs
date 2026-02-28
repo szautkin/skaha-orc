@@ -259,14 +259,89 @@ async function stepPlatformConfig() {
   info(`Dex admin: admin@${hostname} / ${adminPassword}`);
 }
 
-async function stepHelmCheck() {
-  console.log(`\n${bold('5. Helm CLI')}`);
-  const out = run('helm version --short');
-  if (out) {
-    ok(`helm ${out}`);
-  } else {
-    fail('helm not found');
-    info('Install: https://helm.sh/docs/intro/install/');
+async function stepPrerequisites() {
+  console.log(`\n${bold('5. Host prerequisites')}`);
+
+  const platform = process.platform; // 'darwin' or 'linux'
+  const isMac = platform === 'darwin';
+
+  const tools = [
+    {
+      name: 'docker',
+      check: 'docker --version 2>/dev/null',
+      required: true,
+      purpose: 'build & run container images',
+      install: isMac
+        ? 'brew install --cask docker  (or https://docker.com/products/docker-desktop)'
+        : 'curl -fsSL https://get.docker.com | sh',
+    },
+    {
+      name: 'helm',
+      check: 'helm version --short 2>/dev/null',
+      required: true,
+      purpose: 'deploy Helm charts to Kubernetes',
+      install: isMac
+        ? 'brew install helm'
+        : 'curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash',
+    },
+    {
+      name: 'kubectl',
+      check: 'kubectl version --client -o yaml 2>/dev/null',
+      required: true,
+      purpose: 'manage Kubernetes resources',
+      install: isMac
+        ? 'brew install kubectl'
+        : 'curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && sudo install kubectl /usr/local/bin/',
+    },
+    {
+      name: 'openssl',
+      check: 'openssl version 2>/dev/null',
+      required: true,
+      purpose: 'generate TLS certificates',
+      install: isMac
+        ? 'brew install openssl  (usually pre-installed)'
+        : 'sudo apt-get install -y openssl',
+    },
+    {
+      name: 'kind',
+      check: 'kind version 2>/dev/null',
+      required: false,
+      purpose: 'local Kubernetes cluster (optional — not needed with Docker Desktop)',
+      install: isMac
+        ? 'brew install kind'
+        : 'go install sigs.k8s.io/kind@latest',
+    },
+  ];
+
+  let missing = 0;
+  for (const tool of tools) {
+    const out = run(tool.check);
+    if (out) {
+      const version = out.split('\n')[0].trim();
+      ok(`${tool.name}: ${version}`);
+    } else if (tool.required) {
+      fail(`${tool.name} not found — ${tool.purpose}`);
+      info(`Install: ${tool.install}`);
+      missing++;
+    } else {
+      warn(`${tool.name} not found — ${tool.purpose}`);
+      info(`Install: ${tool.install}`);
+    }
+  }
+
+  // Check Docker daemon is running (not just installed)
+  if (run('docker --version 2>/dev/null')) {
+    const ping = run('docker info 2>/dev/null');
+    if (ping) {
+      ok('Docker daemon running');
+    } else {
+      warn('Docker installed but daemon not running — start Docker Desktop or: sudo systemctl start docker');
+    }
+  }
+
+  if (missing > 0) {
+    console.log('');
+    warn(`${missing} required tool(s) missing — install them before deploying`);
   }
 }
 
@@ -301,14 +376,42 @@ async function stepHelmRepos() {
   }
 }
 
-async function stepKubectlCheck() {
-  console.log(`\n${bold('7. Kubectl CLI')}`);
-  const out = run('kubectl version --client -o yaml 2>/dev/null');
-  if (out) {
-    ok('kubectl available');
-  } else {
-    fail('kubectl not found');
-    info('Install: https://kubernetes.io/docs/tasks/tools/');
+async function stepHosts() {
+  console.log(`\n${bold('7. /etc/hosts entry')}`);
+  const hostname = 'haproxy.cadc.dao.nrc.ca';
+
+  try {
+    const hosts = await readFile('/etc/hosts', 'utf-8');
+    if (hosts.includes(hostname)) {
+      ok(`${hostname} already in /etc/hosts`);
+      return;
+    }
+  } catch {
+    // Can't read /etc/hosts — try anyway
+  }
+
+  warn(`${hostname} not in /etc/hosts — browser access won't work without it`);
+
+  if (!isTTY) {
+    info(`Run: sudo bash -c "echo '127.0.0.1 ${hostname}' >> /etc/hosts"`);
+    return;
+  }
+
+  const answer = await ask(`Add 127.0.0.1 ${hostname} to /etc/hosts? (requires sudo) [Y/n]: `);
+  if (answer && answer.toLowerCase() !== 'y') {
+    info('Skipped — add it manually before accessing the UI');
+    return;
+  }
+
+  try {
+    execSync(`sudo bash -c "echo '127.0.0.1 ${hostname}' >> /etc/hosts"`, {
+      stdio: 'inherit',
+      timeout: 30000,
+    });
+    ok(`Added ${hostname} to /etc/hosts`);
+  } catch {
+    fail('Could not update /etc/hosts — add it manually');
+    info(`Run: sudo bash -c "echo '127.0.0.1 ${hostname}' >> /etc/hosts"`);
   }
 }
 
@@ -371,9 +474,9 @@ await stepEnv();
 await stepDirectories();
 await stepExampleValues();
 await stepPlatformConfig();
-await stepHelmCheck();
+await stepPrerequisites();
 await stepHelmRepos();
-await stepKubectlCheck();
+await stepHosts();
 await stepKubeContext();
 
 console.log(`\n${bold('Summary')}`);
@@ -381,14 +484,21 @@ console.log('─'.repeat(40));
 const envExists = await exists(join(ROOT, '.env'));
 const helmValuesCount = (await readdir(join(ROOT, 'helm-values')).catch(() => []))
   .filter((f) => f.endsWith('.yaml')).length;
+const dockerOk = run('docker --version 2>/dev/null') !== null;
 const helmOk = run('helm version --short') !== null;
 const kubectlOk = run('kubectl version --client 2>/dev/null') !== null;
+const opensslOk = run('openssl version 2>/dev/null') !== null;
+let hostsOk = false;
+try { hostsOk = (await readFile('/etc/hosts', 'utf-8')).includes('haproxy.cadc.dao.nrc.ca'); } catch {}
 
 (envExists ? ok : warn)('.env file');
 ok('Directories created');
 (helmValuesCount > 0 ? ok : warn)(`${helmValuesCount} values file(s)`);
-(helmOk ? ok : fail)('Helm CLI');
-(kubectlOk ? ok : fail)('Kubectl CLI');
+(dockerOk ? ok : fail)('Docker');
+(helmOk ? ok : fail)('Helm');
+(kubectlOk ? ok : fail)('Kubectl');
+(opensslOk ? ok : fail)('OpenSSL');
+(hostsOk ? ok : warn)('/etc/hosts');
 
 console.log('');
 console.log(`  Run ${green('npm run dev')} to start the platform.`);

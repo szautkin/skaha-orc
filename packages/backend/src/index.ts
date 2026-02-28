@@ -3,7 +3,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { swaggerSpec } from './swagger.js';
 import { startStatusPolling } from './services/status.service.js';
-import { ensureDirectories, copyExampleValues, ensureHelmRepos, initializeCerts, checkPrerequisites, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig } from './services/bootstrap.service.js';
+import { ensureDirectories, copyExampleValues, ensureHelmRepos, initializeCerts, checkPrerequisites, syncPosixMapperDbConfig, syncGmsId, syncRegistryEntries, syncDexPreferredUsername, syncPosixMapperAuthorizedClients, syncCavernRootOwner, seedPosixMapperDb, syncDexBcryptHash, syncBaseTraefikConfig, syncTraefikTlsCert, syncTraefikClusterIp, syncUrlProtocol, loadKindImages } from './services/bootstrap.service.js';
 import { initializeContext } from './routes/kubernetes.js';
 import { initializeHostIp, initializeApiKeys } from './routes/services.js';
 import { createApp } from './app.js';
@@ -25,6 +25,8 @@ app.listen(config.port, async () => {
   await initializeCerts();
   await syncDexBcryptHash();
   await syncBaseTraefikConfig();
+  await syncTraefikTlsCert();
+  await syncUrlProtocol();
   await syncPosixMapperDbConfig();
   await syncGmsId();
   await syncRegistryEntries();
@@ -32,6 +34,8 @@ app.listen(config.port, async () => {
   await syncPosixMapperAuthorizedClients();
   await syncCavernRootOwner();
   await seedPosixMapperDb();
+  await syncTraefikClusterIp();
+  await loadKindImages();
 
   const preflight = await checkPrerequisites();
   logger.info(

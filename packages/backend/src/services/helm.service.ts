@@ -702,29 +702,47 @@ async function kubectlDeleteVolumes(
 }
 
 /**
- * Post-uninstall cleanup: patch any PVs stuck in Terminating state
- * by removing their finalizers. Called by stop-all after the main
- * uninstall loop to ensure PVs don't linger and block re-deploys.
+ * Post-uninstall cleanup for PVs that block re-deploys:
+ * 1. Terminating PVs — remove finalizers so they can be deleted
+ * 2. Released PVs — clear stale claimRef so new PVCs can bind
  */
 export async function cleanupStuckPVs(): Promise<void> {
   try {
     const { stdout } = await execa(config.kubectlBinary, [
       ...kubeArgs(), 'get', 'pv',
-      '-o', 'jsonpath={range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{"\\n"}{end}',
+      '-o', 'jsonpath={range .items[*]}{.metadata.name}{" "}{.status.phase}{"\\n"}{end}',
     ], { env: { ...process.env, ...kubeEnv() } });
 
-    const stuckPVs = stdout.trim().split('\n').filter(Boolean);
-    if (stuckPVs.length === 0) return;
+    const lines = stdout.trim().split('\n').filter(Boolean);
+    for (const line of lines) {
+      const [pvName, phase] = line.split(' ');
+      if (!pvName) continue;
 
-    for (const pvName of stuckPVs) {
-      try {
-        await execa(config.kubectlBinary, [
-          ...kubeArgs(), 'patch', 'pv', pvName,
-          '-p', '{"metadata":{"finalizers":null}}',
-        ], { env: { ...process.env, ...kubeEnv() } });
-        logger.info({ pvName }, 'Cleared finalizer on stuck PV');
-      } catch {
-        logger.debug({ pvName }, 'Could not clear finalizer on PV (may already be gone)');
+      // Fix 1: Terminating PVs — remove finalizers
+      if (phase === 'Terminating') {
+        try {
+          await execa(config.kubectlBinary, [
+            ...kubeArgs(), 'patch', 'pv', pvName,
+            '-p', '{"metadata":{"finalizers":null}}',
+          ], { env: { ...process.env, ...kubeEnv() } });
+          logger.info({ pvName }, 'Cleared finalizer on Terminating PV');
+        } catch {
+          logger.debug({ pvName }, 'Could not clear finalizer on PV');
+        }
+      }
+
+      // Fix 2: Released PVs — clear stale claimRef so new PVCs can bind
+      if (phase === 'Released') {
+        try {
+          await execa(config.kubectlBinary, [
+            ...kubeArgs(), 'patch', 'pv', pvName,
+            '--type', 'json',
+            '-p', '[{"op": "remove", "path": "/spec/claimRef"}]',
+          ], { env: { ...process.env, ...kubeEnv() } });
+          logger.info({ pvName }, 'Cleared stale claimRef on Released PV');
+        } catch {
+          logger.debug({ pvName }, 'Could not clear claimRef on PV');
+        }
       }
     }
   } catch {
