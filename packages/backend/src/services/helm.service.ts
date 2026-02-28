@@ -12,6 +12,7 @@ import { logger } from '../logger.js';
 import { kubeArgs, kubeEnv, helmContextArgs } from './kube-args.js';
 import { waitForHealthy } from './health.service.js';
 import { isHAProxyRunning, isHAProxyPaused, deployHAProxy, stopHAProxy, detectDeployMode } from './haproxy.service.js';
+import { fixCavernDirPermissions } from './bootstrap.service.js';
 
 /** Extract useful fields from an execa error for logging. */
 function execaErrorDetail(err: unknown): Record<string, unknown> {
@@ -204,10 +205,18 @@ export async function helmDeploy(
       timestamp: timestamp(),
     });
 
-    // Fire-and-forget health check
-    waitForHealthy(serviceId).catch((e) =>
-      logger.error({ serviceId, err: e }, 'Health check failed unexpectedly'),
-    );
+    // Fire-and-forget health check + post-deploy hooks
+    if (serviceId === 'cavern') {
+      // Cavern creates /data/cavern/home and /data/cavern/projects with 750.
+      // Users can't traverse into them. Fix permissions after pod is healthy.
+      waitForHealthy(serviceId)
+        .then(() => fixCavernDirPermissions())
+        .catch((e) => logger.error({ serviceId, err: e }, 'Cavern post-deploy failed'));
+    } else {
+      waitForHealthy(serviceId).catch((e) =>
+        logger.error({ serviceId, err: e }, 'Health check failed unexpectedly'),
+      );
+    }
 
     return { success: true, output };
   } catch (err) {

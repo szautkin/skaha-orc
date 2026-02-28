@@ -545,6 +545,29 @@ export async function syncCavernRootOwner(): Promise<void> {
 }
 
 /**
+ * Fixes directory permissions on Cavern's home and projects directories.
+ * The Cavern Java app creates /data/cavern/home and /data/cavern/projects
+ * with umask 027 (750 root:root). Users can't traverse into them to access
+ * or create allocations. This fixes them to 755.
+ */
+export async function fixCavernDirPermissions(): Promise<void> {
+  const cavernDef = SERVICE_CATALOG['cavern'];
+  if (!cavernDef) return;
+
+  try {
+    await kubectlExec(
+      cavernDef.namespace,
+      'cavern-tomcat',
+      ['chmod', '755', '/data/cavern/home', '/data/cavern/projects'],
+    );
+    logger.info('Fixed Cavern home/projects directory permissions to 755');
+  } catch (err) {
+    // Best-effort — cavern may not be deployed yet, or dirs may not exist yet
+    logger.debug({ err }, 'Could not fix Cavern directory permissions (may not be deployed yet)');
+  }
+}
+
+/**
  * Seeds the posix-mapper database with initial user mappings if the
  * mapping.users table is empty.  Reads seed data from
  * posix-mapper-postgres values (postgres.seed.users).
