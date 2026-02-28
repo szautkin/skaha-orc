@@ -118,7 +118,63 @@ New `kubectlDeleteVolumes()` function handles the `volumes` service with correct
    ```typescript
    kubectl patch pv <name> -p '{"metadata":{"finalizers":null}}'
    ```
-4. Delete remaining resources (ConfigMaps, etc.)
+4. Delete remaining resources (ConfigMaps, etc.) — but NOT namespaces (preserves running sessions)
+
+---
+
+## Problem 2b: Session Pods Fail — Workload PVC Missing
+
+**Symptom:** Session creation fails with:
+```
+0/1 nodes are available: persistentvolumeclaim "skaha-workload-cavern-pvc" not found
+```
+
+**Root Cause:** The `volumes` manifest only created `skaha-pv`/`skaha-pvc` for Cavern's internal use. Skaha session pods run in the `skaha-workload` namespace and need their own PVC (`skaha-workload-cavern-pvc`) to mount the same cavern storage. This workload PV/PVC was never created by the automated deploy.
+
+### Fix: Workload PV/PVC in Volumes Manifest
+
+**File:** `packages/backend/src/services/helm.service.ts`
+
+The `volumes` manifest renderer now also creates:
+1. **Namespace** `skaha-workload` — where session pods run
+2. **PV** `skaha-workload-pv` — local volume (dev) or NFS (production) pointing to same path as cavern
+3. **PVC** `skaha-workload-cavern-pvc` in `skaha-workload` — binds to the workload PV
+
+All configured from `volumes.yaml` → `workload` section:
+```yaml
+workload:
+  storageClassName: ''
+  capacity: 10Gi
+  hostPath: /var/lib/k8s-pvs/science-platform
+  namespace: skaha-workload
+  pvcName: skaha-workload-cavern-pvc
+  pvName: skaha-workload-pv
+  reclaimPolicy: Retain
+  accessModes:
+    - ReadWriteMany
+```
+
+### Uninstall Behavior
+
+- **`volumes` uninstall**: Deletes both cavern and workload PV/PVCs. The `skaha-workload` **namespace is preserved** so running session pods aren't killed.
+- **PV data survives** thanks to `reclaimPolicy: Retain` — redeploy recreates PV/PVC and re-binds.
+- **Full cleanup** (manual): `kubectl delete namespace skaha-workload` kills all sessions and removes the namespace.
+
+### UI & Observability
+
+**File:** `packages/frontend/src/components/config/field-definitions.ts`
+- New "Workload Storage (Session Pods)" section in `volumes` config with fields for PVC name, PV name, namespace, capacity, host path, storage class.
+
+**File:** `packages/backend/src/services/integration-test.service.ts`
+- Three new tests for `volumes` service:
+  - **Cavern PVC**: verifies `skaha-pvc` exists and is Bound in `skaha-system`
+  - **Workload PVC**: verifies `skaha-workload-cavern-pvc` exists and is Bound in `skaha-workload`
+  - **Workload PV**: verifies `skaha-workload-pv` exists and is Bound
+
+**File:** `packages/backend/src/routes/services.ts`
+- Semantic warning if `workload` section is missing or `pvcName`/`namespace` is empty.
+
+Run via: `POST /api/services/volumes/test`
 
 ---
 
@@ -196,24 +252,24 @@ All three are wired into `index.ts` (startup) and `services.ts` (pre-deploy).
 
 | File | Change |
 |------|--------|
-| `src/services/helm.service.ts` | PVC preservation, init SQL seeding, ordered volume deletion |
+| `src/services/helm.service.ts` | PVC preservation, schema-only init SQL, ordered volume deletion, workload PV/PVC manifest |
 | `src/services/bootstrap.service.ts` | `seedPosixMapperDb()`, `syncPosixMapperAuthorizedClients()`, `syncCavernRootOwner()` |
 | `src/services/haproxy.service.ts` | Deploy-mode-aware config, rollout restart after deploy |
 | `src/services/kubectl.service.ts` | `kubectlExec()` helper for running commands in pods |
-| `src/services/integration-test.service.ts` | DB User Mappings test |
-| `src/routes/services.ts` | Semantic warnings for seed users, authorizedClients |
+| `src/services/integration-test.service.ts` | DB User Mappings test, Volumes PVC/PV tests |
+| `src/routes/services.ts` | Semantic warnings for seed users, authorizedClients, workload PVC |
 | `src/index.ts` | Wire new bootstrap functions |
 | `helm-values/posix-mapper-postgres.yaml` | Added `postgres.seed.users` config |
 | `helm-values/posix-mapper-values.yaml` | Added `authorizedClients` |
 | `helm-values/cavern-values.yaml` | rootOwner: root/0/0, dataDir: /data, fsGroup: 10000 |
 | `helm-values/storage.yaml` | Full backend services config |
-| `helm-values/volumes.yaml` | Workload PV/PVC documentation |
+| `helm-values/volumes.yaml` | Workload PV/PVC config (pvcName, pvName, namespace, accessModes) |
 
 ### Frontend
 
 | File | Change |
 |------|--------|
-| `src/components/config/field-definitions.ts` | Seed Users section, fsGroup field, rootOwner text type, storage-ui backend fields |
+| `src/components/config/field-definitions.ts` | Seed Users section, Workload Storage section, fsGroup field, rootOwner text type, storage-ui backend fields |
 
 ### Example Values
 
@@ -235,11 +291,12 @@ base → volumes → dex → mock-ac → reg → posix-mapper-db → haproxy →
 
 After a full `stop-all` + `deploy-all`:
 
-1. `stop-all` completes without hanging (PV finalizers auto-cleared)
+1. `stop-all` completes without hanging (PV finalizers auto-cleared, workload namespace preserved)
 2. `posix-mapper-postgres-pvc` survives uninstall (PVC preserved)
-3. Backend logs show `Seeded posix-mapper DB with initial user mappings` (if DB was empty)
-4. Backend logs show `Auto-set posix-mapper authorizedClients`
-5. Backend logs show `Auto-set Cavern rootOwner to root/0/0` (if empty)
-6. HAProxy starts without cert errors
-7. `POST /api/services/posix-mapper/test` → DB User Mappings: pass
-8. `POST /science-portal/session` → session creates successfully
+3. `POST /api/services/volumes/test` → Cavern PVC: pass, Workload PVC: pass, Workload PV: pass
+4. Backend logs show `Seeded posix-mapper DB with initial user mappings` (if DB was empty)
+5. Backend logs show `Auto-set posix-mapper authorizedClients`
+6. Backend logs show `Auto-set Cavern rootOwner to root/0/0` (if empty)
+7. HAProxy starts without cert errors
+8. `POST /api/services/posix-mapper/test` → DB User Mappings: pass
+9. `POST /science-portal/session` → session creates successfully (workload PVC binds, pod schedules)

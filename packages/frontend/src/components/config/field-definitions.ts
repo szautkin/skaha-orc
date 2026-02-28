@@ -99,6 +99,47 @@ export const SERVICE_FIELD_DEFS: Partial<Record<ServiceId, FieldSection[]>> = {
         { name: 'nfsPath', label: 'NFS Path', type: 'text', path: 'cavern.nfs.path' },
       ],
     },
+    {
+      title: 'Workload Storage (Session Pods)',
+      fields: [
+        {
+          name: 'wlPvcName',
+          label: 'PVC Name',
+          type: 'text',
+          path: 'workload.pvcName',
+          placeholder: 'skaha-workload-cavern-pvc',
+        },
+        {
+          name: 'wlPvName',
+          label: 'PV Name',
+          type: 'text',
+          path: 'workload.pvName',
+          placeholder: 'skaha-workload-pv',
+        },
+        {
+          name: 'wlNamespace',
+          label: 'Namespace',
+          type: 'text',
+          path: 'workload.namespace',
+          placeholder: 'skaha-workload',
+        },
+        { name: 'wlCapacity', label: 'Capacity', type: 'text', path: 'workload.capacity' },
+        {
+          name: 'wlHostPath',
+          label: 'Host Path',
+          type: 'text',
+          path: 'workload.hostPath',
+          placeholder: '/var/lib/k8s-pvs/science-platform',
+        },
+        {
+          name: 'wlStorageClassName',
+          label: 'Storage Class',
+          type: 'text',
+          path: 'workload.storageClassName',
+          placeholder: 'Leave empty for default',
+        },
+      ],
+    },
   ],
   'posix-mapper-db': [
     {

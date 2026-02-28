@@ -1,9 +1,31 @@
 # Volumes — example values
 # PersistentVolume and PersistentVolumeClaim definitions
+#
+# Two PV/PVC pairs are created:
+# 1. cavern: mounted by Cavern service pods (in skaha-system namespace)
+# 2. workload: mounted by Skaha session pods (in skaha-workload namespace)
+# Both should point to the same underlying storage.
 
 cavern:
   storageClassName: ""
   capacity: 100Gi
+  # For production: set NFS server + path
   nfs:
     server: your-nfs-server.example.com
     path: /data/cavern
+  # For local dev: set hostPath instead (leave nfs.server empty)
+  # hostPath: /var/lib/k8s-pvs/science-platform
+
+# Workload PV/PVC — used by Skaha session pods to access cavern storage.
+# Session pods run in the workload namespace (separate from platform services).
+workload:
+  storageClassName: ""
+  capacity: 100Gi
+  # Must match cavern storage (same NFS or hostPath)
+  hostPath: /var/lib/k8s-pvs/science-platform
+  namespace: skaha-workload
+  pvcName: skaha-workload-cavern-pvc
+  pvName: skaha-workload-pv
+  reclaimPolicy: Retain
+  accessModes:
+    - ReadWriteMany

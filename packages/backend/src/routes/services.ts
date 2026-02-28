@@ -722,7 +722,23 @@ export function findSemanticWarnings(serviceId: string, config: Record<string, u
     }
   }
 
-  // 7. Cavern identityManagerClass must be StandardIdentityManager
+  // 7. volumes: warn if workload section is missing/incomplete
+  if (serviceId === 'volumes') {
+    const wl = getNestedValue(config, 'workload');
+    if (!wl || typeof wl !== 'object') {
+      warnings.push('workload: missing — session pods need a workload PVC to mount cavern storage');
+    } else {
+      const wlObj = wl as Record<string, unknown>;
+      if (!wlObj.pvcName) {
+        warnings.push('workload.pvcName: empty — session pods will fail to schedule');
+      }
+      if (!wlObj.namespace) {
+        warnings.push('workload.namespace: empty — workload PVC needs a target namespace');
+      }
+    }
+  }
+
+  // 8. Cavern identityManagerClass must be StandardIdentityManager
   if (serviceId === 'cavern') {
     const cls = getNestedString(config, ['deployment', 'cavern', 'identityManagerClass']);
     if (cls && cls !== 'org.opencadc.auth.StandardIdentityManager') {

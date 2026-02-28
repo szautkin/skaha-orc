@@ -1,7 +1,10 @@
+import { execa } from 'execa';
 import type { ServiceId } from '@skaha-orc/shared';
 import { SERVICE_CATALOG, PLATFORM_HOSTNAME } from '@skaha-orc/shared';
 import { readValuesFile } from './yaml.service.js';
 import { kubectlExec } from './kubectl.service.js';
+import { config } from '../config.js';
+import { kubeArgs, kubeEnv } from './kube-args.js';
 import { logger } from '../logger.js';
 
 export interface TestResult {
@@ -224,6 +227,73 @@ export async function runIntegrationTests(serviceId: ServiceId): Promise<TestRes
         return { status: 'pass' as const, message: `${count} user(s) in DB, seed UIDs match` };
       } catch (err) {
         return { status: 'fail' as const, message: `DB check failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }));
+  }
+
+  // 7. volumes: verify both cavern and workload PVCs exist and are bound
+  if (serviceId === 'volumes') {
+    results.push(await timedTest('Cavern PVC', async () => {
+      try {
+        const { stdout } = await execa(config.kubectlBinary, [
+          ...kubeArgs(), 'get', 'pvc', 'skaha-pvc', '-n', 'skaha-system',
+          '-o', 'jsonpath={.status.phase}',
+        ], { env: { ...process.env, ...kubeEnv() } });
+        const phase = stdout.trim();
+        if (phase === 'Bound') return { status: 'pass' as const, message: 'skaha-pvc is Bound' };
+        return { status: 'fail' as const, message: `skaha-pvc phase: ${phase}` };
+      } catch {
+        return { status: 'fail' as const, message: 'skaha-pvc not found in skaha-system namespace' };
+      }
+    }));
+
+    results.push(await timedTest('Workload PVC', async () => {
+      try {
+        const volsDef = SERVICE_CATALOG['volumes'];
+        let pvcName = 'skaha-workload-cavern-pvc';
+        let ns = 'skaha-workload';
+        if (volsDef?.valuesFile) {
+          try {
+            const vData = await readValuesFile(volsDef.valuesFile);
+            const wl = (vData.workload ?? {}) as Record<string, unknown>;
+            pvcName = String(wl.pvcName || pvcName);
+            ns = String(wl.namespace || ns);
+          } catch { /* use defaults */ }
+        }
+
+        const { stdout } = await execa(config.kubectlBinary, [
+          ...kubeArgs(), 'get', 'pvc', pvcName, '-n', ns,
+          '-o', 'jsonpath={.status.phase}',
+        ], { env: { ...process.env, ...kubeEnv() } });
+        const phase = stdout.trim();
+        if (phase === 'Bound') return { status: 'pass' as const, message: `${pvcName} is Bound in ${ns}` };
+        return { status: 'fail' as const, message: `${pvcName} phase: ${phase}` };
+      } catch {
+        return { status: 'fail' as const, message: 'Workload PVC not found — session pods will fail to schedule' };
+      }
+    }));
+
+    results.push(await timedTest('Workload PV', async () => {
+      try {
+        const volsDef = SERVICE_CATALOG['volumes'];
+        let pvName = 'skaha-workload-pv';
+        if (volsDef?.valuesFile) {
+          try {
+            const vData = await readValuesFile(volsDef.valuesFile);
+            const wl = (vData.workload ?? {}) as Record<string, unknown>;
+            pvName = String(wl.pvName || pvName);
+          } catch { /* use defaults */ }
+        }
+
+        const { stdout } = await execa(config.kubectlBinary, [
+          ...kubeArgs(), 'get', 'pv', pvName,
+          '-o', 'jsonpath={.status.phase}',
+        ], { env: { ...process.env, ...kubeEnv() } });
+        const phase = stdout.trim();
+        if (phase === 'Bound') return { status: 'pass' as const, message: `${pvName} is Bound` };
+        return { status: 'fail' as const, message: `${pvName} phase: ${phase || 'not found'}` };
+      } catch {
+        return { status: 'fail' as const, message: 'Workload PV not found' };
       }
     }));
   }
