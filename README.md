@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/szautkin/skaha-orc/actions/workflows/ci.yml/badge.svg)](https://github.com/szautkin/skaha-orc/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/szautkin/skaha-orc/actions/workflows/codeql.yml/badge.svg)](https://github.com/szautkin/skaha-orc/actions/workflows/codeql.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 
