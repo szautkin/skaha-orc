@@ -16,7 +16,7 @@
     "execa": "^9.5.0",
     "express": "^4.21.0",
     "js-yaml": "^4.1.0",
-    "pino": "^9.5.0",
+    "pino": "^10.3.1",
     "pino-pretty": "^13.0.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",

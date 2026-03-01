@@ -1,5 +1,11 @@
 # Skaha-Orc
 
+[![CI](https://github.com/szautkin/skaha-orc/actions/workflows/ci.yml/badge.svg)](https://github.com/szautkin/skaha-orc/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/szautkin/skaha-orc/actions/workflows/codeql.yml/badge.svg)](https://github.com/szautkin/skaha-orc/actions/workflows/codeql.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+
 A deployment orchestrator and companion UI for the [OpenCADC](https://github.com/opencadc) astronomy platform stack. Skaha-Orc provides a web interface and REST API for managing Helm releases, Kubernetes resources, HAProxy routing, and TLS certificates — designed to work alongside [opencadc/deployments](https://github.com/opencadc/deployments) and the broader OpenCADC ecosystem.
 
 ## Relationship to OpenCADC

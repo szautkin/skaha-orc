@@ -1,5 +1,5 @@
 import { Check, X, Loader2, Circle } from 'lucide-react';
-import type { ServiceId, DeploymentEvent, DeployPhaseNumber } from '@skaha-orc/shared';
+import type { ServiceId, DeploymentEvent } from '@skaha-orc/shared';
 import { SERVICE_CATALOG, DEPLOY_PHASE_LABELS, DEPLOY_PHASE_ORDER } from '@skaha-orc/shared';
 
 interface DeployProgressProps {
@@ -22,8 +22,6 @@ function getStepStatus(
 }
 
 export function DeployProgress({ order, events }: DeployProgressProps) {
-  const orderSet = new Set(order);
-
   const phaseGroups = DEPLOY_PHASE_ORDER.map((phase) => {
     const services = order.filter((id) => {
       const def = SERVICE_CATALOG[id];
